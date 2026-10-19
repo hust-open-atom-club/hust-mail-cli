@@ -70,5 +70,16 @@ func Load(path string) (Config, error) {
 	if err := dec.Decode(new(any)); err != io.EOF {
 		return Config{}, errors.New("config must contain one JSON object")
 	}
+	if cfg.Password != "" {
+		// Inspect the opened descriptor, rather than re-statting the path.
+		// Owner-only read access (0400) is also safe for credential loading.
+		info, err := f.Stat()
+		if err != nil {
+			return Config{}, errors.New("cannot check credential config permissions")
+		}
+		if info.Mode().Perm()&0077 != 0 {
+			return Config{}, errors.New("config containing password must have no group or other permissions; run chmod 600 on the config file")
+		}
+	}
 	return cfg, nil
 }

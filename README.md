@@ -76,7 +76,7 @@ chmod 700 ~/.config/hust-mail-cli
 chmod 600 ~/.config/hust-mail-cli/config.json
 ```
 
-配置中的 `password` 填邮箱专用密码；文件以明文保存，请保持 `0600` 权限。填写后直接运行：
+配置中的 `password` 填邮箱专用密码；文件以明文保存，请保持 `0600` 权限。加载器会拒绝含非空密码且组或其他用户有权限的配置文件，并提示执行 `chmod 600`；仅本人可读的 `0400` 也可使用。填写后直接运行：
 
 ```sh
 ./hust-mail-cli folders

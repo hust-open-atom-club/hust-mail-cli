@@ -62,3 +62,46 @@ func TestMalformedConfigNeverLeaksValues(t *testing.T) {
 		}
 	}
 }
+
+func TestCredentialFilePermissions(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mode      os.FileMode
+		password  string
+		wantError bool
+	}{
+		{"owner_read_write", 0600, "secret-marker", false},
+		{"owner_read_only", 0400, "secret-marker", false},
+		{"group_read", 0640, "secret-marker", true},
+		{"other_read", 0604, "secret-marker", true},
+		{"world_readable", 0644, "secret-marker", true},
+		{"other_execute", 0601, "secret-marker", true},
+		{"passwordless_shared_config", 0644, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(`{"password":"`+tc.password+`"}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, tc.mode); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if !tc.wantError {
+				if err != nil || cfg.Password != tc.password {
+					t.Fatal("safe config rejected")
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("insecure credential file accepted")
+			}
+			if cfg.Password != "" || strings.Contains(err.Error(), tc.password) {
+				t.Fatal("credential exposed on failure")
+			}
+			if !strings.Contains(err.Error(), "chmod 600") {
+				t.Fatal("missing permission repair instructions")
+			}
+		})
+	}
+}
