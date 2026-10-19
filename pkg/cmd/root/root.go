@@ -16,7 +16,7 @@ import (
 func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "hust-mail-cli <command>",
-		Short:         "Read and archive HUST email using IMAP or POP3",
+		Short:         "Read and archive HUST email using read-only IMAP by default",
 		Long:          "Read and archive HUST email over verified TLS. Remote deletion, flag changes and SMTP sending are not implemented.",
 		SilenceErrors: true, SilenceUsage: true,
 	}
@@ -28,14 +28,7 @@ func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 	var dir string
 	list := &cobra.Command{Use: "list", Short: "List local message headers as JSON Lines", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig(cmd)
-			if err != nil {
-				return err
-			}
-			if cmd.Flags().Changed("dir") {
-				cfg.Dir = dir
-			}
-			archiveDir, err := config.ExpandDir(cfg.Dir)
+			archiveDir, err := localArchiveDir(cmd, dir)
 			if err != nil {
 				return err
 			}
@@ -43,10 +36,7 @@ func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 		},
 	}
 	list.Flags().StringVar(&dir, "dir", config.DefaultArchiveDir, "Local archive directory")
-	read := &cobra.Command{Use: "read <file.eml>", Short: "Write a local message in raw MIME format", Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error { return mailarchive.Read(args[0], cmd.OutOrStdout()) },
-	}
-	cmd.AddCommand(list, read)
+	cmd.AddCommand(list, newReadCommand(), newSearchCommand(), newAttachmentsCommand())
 	return cmd
 }
 
@@ -63,11 +53,12 @@ func newReceiveCommand(name, short string) *cobra.Command {
 	}
 	flags := cmd.Flags()
 	flags.StringVar(&opts.User, "user", "", "Full email address (overrides config and HUST_MAIL_USER)")
-	flags.StringVar(&opts.Host, "host", "mail.hust.edu.cn", "Mail server hostname")
-	flags.StringVar(&opts.Protocol, "protocol", "imap", "Receiving protocol: imap or pop3")
+	flags.StringVar(&opts.Host, "host", config.DefaultIMAPHost, "Mail server hostname")
+	flags.StringVar(&opts.Protocol, "protocol", "imap", "Receiving protocol: imap (read-only default) or pop3 (compatibility)")
 	flags.IntVar(&opts.Port, "port", 0, "TLS port (default: IMAP 993, POP3 995)")
 	flags.DurationVar(&opts.Timeout, "timeout", 30*time.Minute, "Total connection and sync timeout; excludes password input")
 	if name == "sync" {
+		flags.IntVar(&opts.Days, "days", 0, "Download only messages received in the last N days; IMAP only, 0 means all time")
 		flags.StringVar(&opts.Dir, "dir", config.DefaultArchiveDir, "Local archive directory")
 		flags.StringVar(&opts.Mailbox, "mailbox", "", "Sync one IMAP folder; default: all selectable folders")
 	}
@@ -109,6 +100,9 @@ func receiveOptions(cmd *cobra.Command, flags mailarchive.Options) (mailarchive.
 	if cmd.Flags().Changed("port") {
 		cfg.Port = flags.Port
 	}
+	if cmd.Flags().Changed("days") {
+		cfg.Days = flags.Days
+	}
 	if cmd.Flags().Changed("timeout") {
 		cfg.Timeout = flags.Timeout.String()
 	}
@@ -121,5 +115,5 @@ func receiveOptions(cmd *cobra.Command, flags mailarchive.Options) (mailarchive.
 		return mailarchive.Options{}, err
 	}
 	return mailarchive.Options{User: cfg.User, Password: cfg.Password, Host: cfg.Host,
-		Protocol: cfg.Protocol, Port: cfg.Port, Dir: archiveDir, Mailbox: cfg.Mailbox, Timeout: timeout}, nil
+		Protocol: cfg.Protocol, Port: cfg.Port, Dir: archiveDir, Mailbox: cfg.Mailbox, Timeout: timeout, Days: cfg.Days}, nil
 }

@@ -15,7 +15,7 @@ func main() {
 }
 
 func run() int {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 	cmd := root.NewCmdRoot(os.Stdout, os.Stderr)
 	if err := cmd.ExecuteContext(ctx); err != nil {

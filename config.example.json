@@ -2,9 +2,14 @@
   "user": "your-name@hust.edu.cn",
   "password": "replace-with-your-dedicated-password",
   "protocol": "imap",
-  "host": "mail.hust.edu.cn",
-  "port": 0,
+  "host": "imap.hust.edu.cn",
+  "port": 993,
+  "smtp": {
+    "host": "smtp.hust.edu.cn",
+    "port": 465
+  },
   "dir": "~/HUST-Mail/",
   "mailbox": "",
+  "days": 7,
   "timeout": "30m"
 }

@@ -18,16 +18,88 @@ import (
 func TestCommandValidation(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	for _, args := range [][]string{
-		{"send"}, {"reply"}, {"forward"}, {"delete"}, {"smtp"},
+		{"doctor"}, {"diagnose"}, {"send"}, {"reply"}, {"forward"}, {"delete"}, {"smtp"},
 		{"sync", "extra"}, {"read"}, {"list", "extra"},
 		{"sync", "--protocol", "smtp"}, {"folders", "--protocol", "pop3"},
 		{"sync", "--port", "-1"}, {"sync", "--password", "secret"},
+		{"sync", "--days", "-1"}, {"sync", "--days", "36501"}, {"sync", "--protocol", "pop3", "--days", "7"},
+		{"search"}, {"search", "query", "--limit", "-1"},
+		{"attachments", "list"}, {"attachments", "export"},
 	} {
 		cmd := NewCmdRoot(io.Discard, io.Discard)
 		cmd.SetArgs(args)
 		if err := cmd.ExecuteContext(context.Background()); err == nil {
 			t.Errorf("accepted %q", args)
 		}
+	}
+}
+
+func TestDaysConfigAndExplicitZeroOverride(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"user":"test","days":7}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args           []string
+		flagDays, want int
+	}{
+		{[]string{"sync", "--config", path}, 0, 7},
+		{[]string{"sync", "--config", path, "--days", "0"}, 0, 0},
+		{[]string{"sync", "--config", path, "--days", "3"}, 3, 3},
+	} {
+		cmd := NewCmdRoot(io.Discard, io.Discard)
+		sync, _, _ := cmd.Find([]string{"sync"})
+		sync.RunE = func(cmd *cobra.Command, args []string) error {
+			opts, err := receiveOptions(cmd, mailarchive.Options{Days: tc.flagDays})
+			if err == nil && opts.Days != tc.want {
+				t.Errorf("days=%d; want %d", opts.Days, tc.want)
+			}
+			return err
+		}
+		cmd.SetArgs(tc.args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestLocalMIMECommands(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	path := filepath.Join(dir, "message.eml")
+	raw := "Subject: =?utf-8?B?5L2g5aW9?=\r\nFrom: alice@example.com\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=test\r\n\r\n--test\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nHello world\r\n--test\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=hello.txt\r\nContent-Transfer-Encoding: base64\r\n\r\naGVsbG8=\r\n--test--\r\n"
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "attachments")
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"read", path}, "Subject: 你好"},
+		{[]string{"read", "--raw", path}, "aGVsbG8="},
+		{[]string{"search", "WORLD", "--dir", dir, "--from", "alice"}, `"subject":"你好"`},
+		{[]string{"attachments", "list", path}, `"filename":"hello.txt"`},
+		{[]string{"attachments", "export", path, "--index", "1", "--output", dest}, "001-hello.txt"},
+	} {
+		var out bytes.Buffer
+		cmd := NewCmdRoot(&out, io.Discard)
+		cmd.SetArgs(tc.args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("%v: %v", tc.args, err)
+		}
+		if !strings.Contains(out.String(), tc.want) {
+			t.Errorf("%v missing %q", tc.args, tc.want)
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(dest, "001-hello.txt"))
+	if err != nil || string(data) != "hello" {
+		t.Fatal("exported data mismatch", err)
+	}
+	data, err = os.ReadFile(path)
+	if err != nil || string(data) != raw {
+		t.Fatal("source message modified")
 	}
 }
 
@@ -48,7 +120,7 @@ func TestHelpAndLocalReadNeedNoCredentials(t *testing.T) {
 	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"list", "--dir", dir}, {"read", path}} {
+	for _, args := range [][]string{{"list", "--dir", dir}, {"read", "--raw", path}} {
 		var out bytes.Buffer
 		cmd := NewCmdRoot(&out, io.Discard)
 		cmd.SetArgs(args)
