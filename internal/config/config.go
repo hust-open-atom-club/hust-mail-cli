@@ -36,6 +36,7 @@ type Config struct {
 	Port     int    `json:"port"`
 	Dir      string `json:"dir"`
 	Mailbox  string `json:"mailbox"`
+	Days     int    `json:"days"`
 	Timeout  string `json:"timeout"`
 }
 

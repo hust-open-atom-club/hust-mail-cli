@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func listFolders(c *imapclient.Client) ([]string, error) {
@@ -33,7 +34,7 @@ func listFolders(c *imapclient.Client) ([]string, error) {
 	return boxes, nil
 }
 
-func syncFolder(c *imapclient.Client, root, box string) (downloaded, skipped int, err error) {
+func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time) (downloaded, skipped int, err error) {
 	// ReadOnly emits EXAMINE, never SELECT in read/write mode.
 	selected, err := c.Select(box, &imap.SelectOptions{ReadOnly: true}).Wait()
 	if err != nil {
@@ -49,7 +50,13 @@ func syncFolder(c *imapclient.Client, root, box string) (downloaded, skipped int
 			return
 		}
 	}
-	data, err := c.UIDSearch(&imap.SearchCriteria{}, nil).Wait()
+	criteria := &imap.SearchCriteria{}
+	if !cutoff.IsZero() {
+		// IMAP SINCE compares server calendar dates, not instants. Widen the
+		// candidate day for timezone differences, then check INTERNALDATE exactly.
+		criteria.Since = cutoff.UTC().Add(-24 * time.Hour)
+	}
+	data, err := c.UIDSearch(criteria, nil).Wait()
 	if err != nil {
 		return 0, 0, err
 	}
@@ -67,7 +74,10 @@ func syncFolder(c *imapclient.Client, root, box string) (downloaded, skipped int
 		} else if !errors.Is(statErr, os.ErrNotExist) {
 			return downloaded, skipped, statErr
 		}
-		if err = atomicWrite(path, func(w io.Writer) error { return fetchMessage(c, uid, w) }); err != nil {
+		if err = atomicWrite(path, func(w io.Writer) error { return fetchMessage(c, uid, w, cutoff) }); errors.Is(err, errOutsideRange) {
+			err = nil
+			continue
+		} else if err != nil {
 			return
 		}
 		downloaded++
@@ -75,16 +85,26 @@ func syncFolder(c *imapclient.Client, root, box string) (downloaded, skipped int
 	return
 }
 
-func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer) error {
+var errOutsideRange = errors.New("message received before requested cutoff")
+
+func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer, cutoff time.Time) error {
 	// Resolve sequence without literals: the library's UID FETCH dispatcher
 	// assumes UID precedes the body. Sequence FETCH accepts either order.
 	// Verify UID before publishing in case a concurrent expunge shifts numbers.
-	resolved, err := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true}).Collect()
+	resolved, err := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true, InternalDate: !cutoff.IsZero()}).Collect()
 	if err != nil {
 		return err
 	}
 	if len(resolved) != 1 || resolved[0].UID != uid || resolved[0].SeqNum == 0 {
 		return fmt.Errorf("cannot resolve UID %d; rerun sync", uid)
+	}
+	if !cutoff.IsZero() {
+		if resolved[0].InternalDate.IsZero() {
+			return fmt.Errorf("server omitted INTERNALDATE for UID %d; cannot apply receive-time filter", uid)
+		}
+		if resolved[0].InternalDate.Before(cutoff) {
+			return errOutsideRange
+		}
 	}
 	cmd := c.Fetch(imap.SeqSetNum(resolved[0].SeqNum), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{{Peek: true}}})
 	defer cmd.Close()

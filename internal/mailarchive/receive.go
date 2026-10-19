@@ -22,34 +22,17 @@ type Options struct {
 	User, Host, Protocol, Dir, Mailbox string
 	Password                           string
 	Port                               int
+	Days                               int
 	Timeout                            time.Duration
 }
 
 func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writer) error {
-	if opts.Protocol != "imap" && opts.Protocol != "pop3" {
-		return errors.New("--protocol must be imap or pop3")
+	if err := validateOptions(mode, &opts); err != nil {
+		return err
 	}
-	if opts.Protocol == "pop3" && (mode == "folders" || opts.Mailbox != "") {
-		return errors.New("POP3 has no folders; use sync without --mailbox")
-	}
-	if opts.Port == 0 {
-		if opts.Protocol == "imap" {
-			opts.Port = 993
-		} else {
-			opts.Port = 995
-		}
-	}
-	if opts.Port < 1 || opts.Port > 65535 {
-		return errors.New("invalid TLS port")
-	}
-	if opts.User == "" {
-		return errors.New("user is required in config, --user or HUST_MAIL_USER")
-	}
-	if opts.Host == "" || strings.ContainsAny(opts.Host, ":/\\ \t\r\n") {
-		return errors.New("--host must be a hostname without port or scheme")
-	}
-	if opts.Timeout <= 0 {
-		return errors.New("--timeout must be positive")
+	var cutoff time.Time
+	if opts.Days > 0 {
+		cutoff = time.Now().UTC().Add(-time.Duration(opts.Days) * 24 * time.Hour)
 	}
 	password := opts.Password
 	if password == "" {
@@ -98,6 +81,9 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 			fmt.Fprintf(out, "%q\n", box)
 		}
 	} else {
+		if !cutoff.IsZero() {
+			fmt.Fprintf(out, "Receive time cutoff: %s (last %d days)\n", cutoff.Format(time.RFC3339), opts.Days)
+		}
 		if opts.Mailbox != "" {
 			boxes = []string{opts.Mailbox}
 		}
@@ -116,7 +102,7 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 		}
 		var total int
 		for _, box := range boxes {
-			n, skipped, err := syncFolder(c, root, box)
+			n, skipped, err := syncFolder(c, root, box, cutoff)
 			if err != nil {
 				return fmt.Errorf("folder %q: %w", box, err)
 			}
@@ -127,6 +113,41 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 	}
 	if err := c.Logout().Wait(); err != nil {
 		return fmt.Errorf("IMAP logout: %w", err)
+	}
+	return nil
+}
+
+func validateOptions(mode string, opts *Options) error {
+	if opts.Days < 0 || opts.Days > 36500 {
+		return errors.New("--days/config days must be between 0 and 36500 (0 means all time)")
+	}
+	if opts.Days > 0 && opts.Protocol == "pop3" {
+		return errors.New("receive-time filtering requires IMAP; use --protocol imap or --days 0 for POP3")
+	}
+	if opts.Protocol != "imap" && opts.Protocol != "pop3" {
+		return errors.New("--protocol must be imap or pop3")
+	}
+	if opts.Protocol == "pop3" && (mode == "folders" || opts.Mailbox != "") {
+		return errors.New("POP3 has no folders; use sync without --mailbox")
+	}
+	if opts.Port == 0 {
+		if opts.Protocol == "imap" {
+			opts.Port = 993
+		} else {
+			opts.Port = 995
+		}
+	}
+	if opts.Port < 1 || opts.Port > 65535 {
+		return errors.New("invalid TLS port")
+	}
+	if opts.User == "" {
+		return errors.New("user is required in config, --user or HUST_MAIL_USER")
+	}
+	if opts.Host == "" || strings.ContainsAny(opts.Host, ":/\\ \t\r\n") {
+		return errors.New("--host must be a hostname without port or scheme")
+	}
+	if opts.Timeout <= 0 {
+		return errors.New("--timeout must be positive")
 	}
 	return nil
 }

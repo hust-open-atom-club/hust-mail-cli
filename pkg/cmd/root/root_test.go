@@ -18,10 +18,11 @@ import (
 func TestCommandValidation(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	for _, args := range [][]string{
-		{"send"}, {"reply"}, {"forward"}, {"delete"}, {"smtp"},
+		{"doctor"}, {"diagnose"}, {"send"}, {"reply"}, {"forward"}, {"delete"}, {"smtp"},
 		{"sync", "extra"}, {"read"}, {"list", "extra"},
 		{"sync", "--protocol", "smtp"}, {"folders", "--protocol", "pop3"},
 		{"sync", "--port", "-1"}, {"sync", "--password", "secret"},
+		{"sync", "--days", "-1"}, {"sync", "--days", "36501"}, {"sync", "--protocol", "pop3", "--days", "7"},
 		{"search"}, {"search", "query", "--limit", "-1"},
 		{"attachments", "list"}, {"attachments", "export"},
 	} {
@@ -29,6 +30,36 @@ func TestCommandValidation(t *testing.T) {
 		cmd.SetArgs(args)
 		if err := cmd.ExecuteContext(context.Background()); err == nil {
 			t.Errorf("accepted %q", args)
+		}
+	}
+}
+
+func TestDaysConfigAndExplicitZeroOverride(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"user":"test","days":7}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		args           []string
+		flagDays, want int
+	}{
+		{[]string{"sync", "--config", path}, 0, 7},
+		{[]string{"sync", "--config", path, "--days", "0"}, 0, 0},
+		{[]string{"sync", "--config", path, "--days", "3"}, 3, 3},
+	} {
+		cmd := NewCmdRoot(io.Discard, io.Discard)
+		sync, _, _ := cmd.Find([]string{"sync"})
+		sync.RunE = func(cmd *cobra.Command, args []string) error {
+			opts, err := receiveOptions(cmd, mailarchive.Options{Days: tc.flagDays})
+			if err == nil && opts.Days != tc.want {
+				t.Errorf("days=%d; want %d", opts.Days, tc.want)
+			}
+			return err
+		}
+		cmd.SetArgs(tc.args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err)
 		}
 	}
 }
