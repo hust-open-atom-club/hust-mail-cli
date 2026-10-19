@@ -60,6 +60,7 @@ func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time) (downl
 	if err != nil {
 		return 0, 0, err
 	}
+	var failures []error
 	for _, uid := range data.AllUIDs() {
 		path := filepath.Join(dir, strconv.FormatUint(uint64(uid), 10)+".eml")
 		info, statErr := os.Lstat(path)
@@ -78,14 +79,39 @@ func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time) (downl
 			err = nil
 			continue
 		} else if err != nil {
+			var unavailable *unavailableMessageError
+			if errors.As(err, &unavailable) {
+				failures = append(failures, err)
+				err = nil
+				continue
+			}
 			return
 		}
 		downloaded++
+	}
+	if len(failures) > 0 {
+		err = &incompleteFolderError{failures: failures}
 	}
 	return
 }
 
 var errOutsideRange = errors.New("message received before requested cutoff")
+
+// Only missing content may be deferred until the end of a sync. Transport,
+// identity and local storage errors still stop immediately.
+type unavailableMessageError struct {
+	uid    imap.UID
+	detail string
+}
+
+func (e *unavailableMessageError) Error() string {
+	return fmt.Sprintf("UID %d: %s", e.uid, e.detail)
+}
+
+type incompleteFolderError struct{ failures []error }
+
+func (e *incompleteFolderError) Error() string   { return errors.Join(e.failures...).Error() }
+func (e *incompleteFolderError) Unwrap() []error { return e.failures }
 
 func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer, cutoff time.Time) error {
 	// Resolve sequence without literals: the library's UID FETCH dispatcher
@@ -94,6 +120,9 @@ func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer, cutoff time.T
 	resolved, err := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true, InternalDate: !cutoff.IsZero()}).Collect()
 	if err != nil {
 		return err
+	}
+	if len(resolved) == 0 {
+		return &unavailableMessageError{uid: uid, detail: "server no longer returned the searched UID; retry sync"}
 	}
 	if len(resolved) != 1 || resolved[0].UID != uid || resolved[0].SeqNum == 0 {
 		return fmt.Errorf("cannot resolve UID %d; rerun sync", uid)
@@ -130,6 +159,20 @@ func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer, cutoff time.T
 		return err
 	}
 	if count != 1 || gotUID != uid || size == 0 {
+		if size == 0 && (count == 0 || (count == 1 && (gotUID == 0 || gotUID == uid))) {
+			// A tagged OK without a literal does not establish remote deletion.
+			// Query metadata again, without downloading or exposing mail content.
+			metadata, err := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true, RFC822Size: true}).Collect()
+			if err != nil {
+				return err
+			}
+			if len(metadata) == 0 {
+				return &unavailableMessageError{uid: uid, detail: "server no longer returned the UID after the body request; retry sync"}
+			}
+			if len(metadata) == 1 && metadata[0].UID == uid {
+				return &unavailableMessageError{uid: uid, detail: fmt.Sprintf("server returned no body although the message still exists (RFC822.SIZE=%d bytes); retry or check the message in webmail", metadata[0].RFC822Size)}
+			}
+		}
 		return fmt.Errorf("incomplete response for UID %d (mail may have been removed remotely); rerun sync", uid)
 	}
 	return nil

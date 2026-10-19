@@ -76,6 +76,7 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 	if err != nil {
 		return err
 	}
+	var syncErr error
 	if mode == "folders" {
 		for _, box := range boxes {
 			fmt.Fprintf(out, "%q\n", box)
@@ -100,19 +101,35 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 		if err := atomicWrite(filepath.Join(root, "account.json"), func(w io.Writer) error { _, err := w.Write(meta); return err }); err != nil {
 			return err
 		}
-		var total int
-		for _, box := range boxes {
-			n, skipped, err := syncFolder(c, root, box, cutoff)
-			if err != nil {
-				return fmt.Errorf("folder %q: %w", box, err)
-			}
-			total += n
-			fmt.Fprintf(out, "%q: downloaded=%d existing=%d\n", box, n, skipped)
-		}
-		fmt.Fprintf(out, "Complete: downloaded=%d archive=%s\n", total, root)
+		syncErr = syncMailboxes(c, root, boxes, cutoff, out, errOut)
 	}
 	if err := c.Logout().Wait(); err != nil {
-		return fmt.Errorf("IMAP logout: %w", err)
+		return errors.Join(syncErr, fmt.Errorf("IMAP logout: %w", err))
+	}
+	return syncErr
+}
+
+func syncMailboxes(c *imapclient.Client, root string, boxes []string, cutoff time.Time, out, errOut io.Writer) error {
+	var total, ignored int
+	for _, box := range boxes {
+		n, skipped, err := syncFolder(c, root, box, cutoff)
+		total += n
+		if err != nil {
+			partial, ok := err.(*incompleteFolderError)
+			if !ok {
+				return fmt.Errorf("folder %q: %w", box, err)
+			}
+			ignored += len(partial.failures)
+			fmt.Fprintf(errOut, "warning: ignoring unavailable mail in folder %q: %v\n", box, err)
+			fmt.Fprintf(out, "%q: downloaded=%d existing=%d ignored=%d\n", box, n, skipped, len(partial.failures))
+		} else {
+			fmt.Fprintf(out, "%q: downloaded=%d existing=%d\n", box, n, skipped)
+		}
+	}
+	if ignored > 0 {
+		fmt.Fprintf(out, "Complete: downloaded=%d ignored=%d archive=%s\n", total, ignored, root)
+	} else {
+		fmt.Fprintf(out, "Complete: downloaded=%d archive=%s\n", total, root)
 	}
 	return nil
 }
