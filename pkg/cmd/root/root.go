@@ -28,14 +28,7 @@ func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 	var dir string
 	list := &cobra.Command{Use: "list", Short: "List local message headers as JSON Lines", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig(cmd)
-			if err != nil {
-				return err
-			}
-			if cmd.Flags().Changed("dir") {
-				cfg.Dir = dir
-			}
-			archiveDir, err := config.ExpandDir(cfg.Dir)
+			archiveDir, err := localArchiveDir(cmd, dir)
 			if err != nil {
 				return err
 			}
@@ -43,10 +36,7 @@ func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 		},
 	}
 	list.Flags().StringVar(&dir, "dir", config.DefaultArchiveDir, "Local archive directory")
-	read := &cobra.Command{Use: "read <file.eml>", Short: "Write a local message in raw MIME format", Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error { return mailarchive.Read(args[0], cmd.OutOrStdout()) },
-	}
-	cmd.AddCommand(list, read)
+	cmd.AddCommand(list, newReadCommand(), newSearchCommand(), newAttachmentsCommand())
 	return cmd
 }
 
