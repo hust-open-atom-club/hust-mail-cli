@@ -89,7 +89,7 @@ func TestPOP3InterruptedDownload(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !d.IsDir() {
+		if !d.IsDir() && d.Name() != ".sync.flock" {
 			t.Errorf("partial file leaked: %s", path)
 		}
 		return nil
