@@ -1,0 +1,10 @@
+{
+  "user": "your-name@hust.edu.cn",
+  "password": "replace-with-your-dedicated-password",
+  "protocol": "imap",
+  "host": "mail.hust.edu.cn",
+  "port": 0,
+  "dir": "~/HUST-Mail/",
+  "mailbox": "",
+  "timeout": "30m"
+}

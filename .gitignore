@@ -31,3 +31,9 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Local mailbox contents and build output
+/mail-archive/
+/hust-mail-cli
+/bin/
+*.eml
