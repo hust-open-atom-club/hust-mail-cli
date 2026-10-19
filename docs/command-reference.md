@@ -52,6 +52,8 @@ hust-mail-cli sync --days 0
 
 中断后可直接重跑；SSH 后台运行和残留锁处理见[同步恢复](troubleshooting.md)。
 
+服务器不返回个别邮件正文时，继续同步其余邮件和文件夹，将其作为警告跳过，最后显示 `ignored` 数量并正常退出。警告包含文件夹及 UID；不会保存缺失正文的邮件，`ignored` 不计入下载数量。详情见[故障排查](troubleshooting.md#邮件仍存在但服务器不返回正文)。
+
 ### POP3 兼容收信
 
 ```sh
