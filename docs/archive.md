@@ -6,6 +6,6 @@
 
 目录权限为 `0700`，邮件文件为 `0600`。下载先写临时文件，成功后才发布最终文件；失败可重跑。工具不会校验已有非空文件的完整性，也不提供归档加密。
 
-归档默认保存在 `~/HUST-Mail/`，可以通过配置的 `dir` 或同步命令的 `--dir` 修改。[同步时间范围](commands/sync.md#时间范围)只限制新增下载，不会清理已归档邮件。
+归档默认保存在 `~/HUST-Mail/`，可以通过配置的 `dir` 或同步命令的 `--dir` 修改。[同步时间范围](command-reference.md#时间范围)只限制新增下载，不会清理已归档邮件。
 
-读取和搜索请参考 [list](commands/list.md)、[read](commands/read.md) 和 [search](commands/search.md)。
+读取和搜索请参考 [list](command-reference.md#list-列出本地邮件)、[read](command-reference.md#read-阅读本地邮件) 和 [search](command-reference.md#search-搜索本地邮件)。

@@ -71,7 +71,7 @@ CLI 不提供密码命令行参数，不输出密码，也不会把密码写入�
 | `--timeout` | `30m` | 连接、认证和同步的总时限 |
 | `--config` | `~/.config/hust-mail-cli/config.json` | 指定配置文件的全局选项 |
 
-不提供密码命令行参数。密码来自 `HUST_MAIL_PASSWORD`、配置或终端隐藏输入。`sync` 专用的 `--dir`、`--mailbox` 和 `--days` 见 [sync](commands/sync.md)。
+不提供密码命令行参数。密码来自 `HUST_MAIL_PASSWORD`、配置或终端隐藏输入。`sync` 专用的 `--dir`、`--mailbox` 和 `--days` 见 [sync](command-reference.md#sync-同步邮件)。
 
 ## 连接与只读行为
 
@@ -83,4 +83,4 @@ CLI 不提供密码命令行参数，不输出密码，也不会把密码写入�
 
 `--timeout` 默认 30 分钟，覆盖连接、认证和同步，不包含终端输入密码的时间。连接阶段最多等待 30 秒；取消操作或总超时会关闭连接。
 
-同步参数见 [sync](commands/sync.md)，归档目录和增量行为见[本地归档](archive.md)。
+同步参数见 [sync](command-reference.md#sync-同步邮件)，归档目录和增量行为见[本地归档](archive.md)。
