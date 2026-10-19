@@ -52,6 +52,8 @@ Linux/macOS 均使用 `~/.config/hust-mail-cli/config.json` 和默认归档目�
 
 ## 配置与专用密码
 
+首次使用时，请先按照[客户端专用密码获取指南](docs/client-password.md)，在邮箱网页端通过 **头像 → 个人设置 → 安全设置 → 客户端专用密码** 生成专用密码。指南包含各步骤截图和配置填写说明。
+
 默认读取 `~/.config/hust-mail-cli/config.json`（macOS 也使用此路径）：
 
 ```json
@@ -191,6 +193,11 @@ nohup hust-mail-cli sync > ~/hust-mail-sync.log 2>&1 < /dev/null &
 `.sync.flock` 是长期保留的内核锁文件，存在本身是正常现象，**不要手工删除它**。异常退出留下的 `.download-*`、`.lock-*` 临时文件不会阻止重跑；如需清理，应在确认该账号没有同步进程运行后操作，保留 `.eml` 邮件。
 
 程序处理 `SIGHUP`、`SIGINT` 和 `SIGTERM`，收到信号后取消操作并清理锁。SSH 断开可能终止裸 `&` 后台任务；这不代表任务会持续运行，但重跑不会因新版残留锁而被永久阻塞。希望断开连接后继续同步，请使用 `nohup` 或 `tmux`。锁机制面向 Linux/macOS 本地文件系统；不支持锁的文件系统会明确报错。
+
+## 更多文档
+
+- [客户端专用密码获取指南](docs/client-password.md)：网页端操作路径、截图及 CLI 配置填写。
+- [配置示例](config.example.json)：预填华科邮箱服务器，只需填写邮箱和专用密码。
 
 ## 项目结构与验证
 
