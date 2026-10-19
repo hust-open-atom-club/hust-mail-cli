@@ -8,7 +8,9 @@
 - `internal/mailarchive/`: IMAP/POP3 receiving, local storage, and local message reading.
 - Tests live beside their implementation in `*_test.go`. `config.example.json` contains placeholder settings; `README.md` documents user workflows.
 
-Keep protocol and storage logic outside Cobra handlers. Current commands are `sync`, `folders`, `list`, and `read`; SMTP is deferred.
+Keep protocol and storage logic outside Cobra handlers. Commands include `sync`, `folders`, `list`, `read`, `search`, and `attachments list/export`; SMTP is deferred. Local MIME operations must preserve source messages, avoid network access, and prevent attachment path traversal or overwrites. `read --raw` preserves original bytes; default `read` shows decoded text. Sync recovery must preserve `.eml` and live locks, and never unlink the persistent `.sync.flock` inode.
+
+Default to read-only IMAP for receiving. SMTP is the planned sending protocol and remains deferred; retain POP3 as an explicit compatibility option. Do not enable IMAP writes as part of future SMTP work.
 
 Target Linux/macOS, excluding Windows. Preserve `CGO_ENABLED=0` builds. Cross-compile with `sh scripts/build-platforms.sh`; report compilation separately from target runtime validation.
 
@@ -44,3 +46,5 @@ History currently contains only `Initial commit`, so no established commit conve
 ## Security & Configuration
 
 Default configuration is `~/.config/hust-mail-cli/config.json`, including on macOS. Precedence is explicit flags, supported environment variables, configuration, then defaults. Keep credential files at `0600`; never commit passwords or real `.eml` files. Preserve verified TLS, IMAP `EXAMINE`/`BODY.PEEK[]`, POP3's no-`DELE` behavior, and atomic archive writes.
+
+`days`/`--days` limits new IMAP downloads by server `INTERNALDATE`, with zero meaning all time. Preserve explicit zero flag overrides and exact cutoff checks after coarse date searches. Do not automatically delete archived mail; reject nonzero ranges for POP3 rather than treating sender-provided dates as receive timestamps.

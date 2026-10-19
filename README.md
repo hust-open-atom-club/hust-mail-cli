@@ -1,6 +1,6 @@
 # hust-mail-cli
 
-Go 编写的华中科技大学邮箱 CLI，使用 Cobra 组织命令。当前支持 IMAP/POP3 收信、本地增量归档和本地读取，SMTP 留待后续实现。
+Go 编写的华中科技大学邮箱 CLI，使用 Cobra 组织命令。默认通过只读 IMAP 收信，支持本地增量归档、搜索、正文展示和附件导出。后续发信使用 SMTP，目前尚未实现；POP3 保留为显式选择的兼容收信方式。
 
 ## 构建
 
@@ -59,13 +59,20 @@ Linux/macOS 均使用 `~/.config/hust-mail-cli/config.json` 和默认归档目�
   "user": "你的邮箱@hust.edu.cn",
   "password": "你生成的专用密码",
   "protocol": "imap",
-  "host": "mail.hust.edu.cn",
-  "port": 0,
+  "host": "imap.hust.edu.cn",
+  "port": 993,
+  "smtp": {
+    "host": "smtp.hust.edu.cn",
+    "port": 465
+  },
   "dir": "~/HUST-Mail/",
   "mailbox": "",
+  "days": 7,
   "timeout": "30m"
 }
 ```
+
+服务器已预填为 IMAP `imap.hust.edu.cn:993` 和 SMTP `smtp.hust.edu.cn:465`，均使用隐式 TLS（SSL）。只需填写 `user`（完整邮箱地址）和 `password`（网页端生成的专用密码）。`smtp` 当前仅预留配置，不建立连接或启用发信。
 
 可从仓库中的 `config.example.json` 复制后填写：
 
@@ -84,7 +91,11 @@ chmod 600 ~/.config/hust-mail-cli/config.json
 ./hust-mail-cli list
 ```
 
-字段均可省略。`port: 0` 按协议自动选择端口（IMAP 993、POP3 995），切换协议时无需保留另一协议的端口。`mailbox` 留空表示所有可读取的 IMAP 文件夹，POP3 不支持此字段的非空值。`timeout` 使用 `30m`、`60s` 等时长格式。默认归档目录为 `~/HUST-Mail/`，不受命令运行目录影响，适用于安装在系统目录中的命令。配置及 `--dir` 均支持开头的 `~/` 展开；相对路径仍相对于运行命令时的工作目录。已有配置中的 `dir` 会继续生效，需要使用新位置时请将其改为 `~/HUST-Mail/`。
+字段均可省略。收信默认主机为 `imap.hust.edu.cn`；`port: 0` 或省略时按协议自动选择端口（IMAP 993、POP3 995）。兼容 POP3 时请设置 `host: "pop.hust.edu.cn"`、`port: 995` 和 `days: 0`；命令行切换时相应使用 `--protocol pop3 --host pop.hust.edu.cn --port 995 --days 0`。`mailbox` 留空表示所有可读取的 IMAP 文件夹，POP3 不支持此字段的非空值。`timeout` 使用 `30m`、`60s` 等时长格式。默认归档目录为 `~/HUST-Mail/`，不受命令运行目录影响，适用于安装在系统目录中的命令。配置及 `--dir` 均支持开头的 `~/` 展开；相对路径仍相对于运行命令时的工作目录。已有配置中的 `dir` 会继续生效，需要使用新位置时请将其改为 `~/HUST-Mail/`。
+
+`days` 控制下载的时间范围：`7` 表示本次同步启动前最近 7×24 小时，`0` 或省略表示不限时间，允许值为 0–36500。时间范围基于 IMAP 服务端的 `INTERNALDATE`（收信时间），而非邮件 `Date` 字段；按精确时间过滤，缺失收信时间时会报错。服务端日期搜索会适当放宽候选范围，再用收信时间核验，避免时区边界漏信。
+
+时间范围只限制新增下载，不会删除已归档邮件，也不会自动滚动清理超过期限的本地文件。POP3 不提供可靠的服务端收信时间，因此需要使用 `days: 0`，或切换为 IMAP。使用新配置字段前请先构建、安装对应版本 CLI。
 
 优先级：显式命令行参数 > 环境变量 > 配置文件 > 默认值。环境变量支持 `HUST_MAIL_USER`、`HUST_MAIL_PASSWORD`。通过 `--config /path/to/config.json` 可指定其他文件；默认配置不存在时沿用参数或交互输入，显式指定的文件不存在则报错。无效配置或未知字段会报错；帮助、补全和 `read` 不读取配置文件。
 
@@ -106,24 +117,51 @@ CLI 不提供密码命令行参数，不输出密码，也不会把密码写入�
 # IMAP：只同步指定文件夹
 ./hust-mail-cli sync --user 你的邮箱@hust.edu.cn --mailbox INBOX
 
+# IMAP：只下载近 7 天收到的邮件；覆盖配置中的范围
+./hust-mail-cli sync --days 7
+
+# 显式覆盖 days 配置，下载全部时间的邮件
+./hust-mail-cli sync --days 0
+
 # POP3：下载服务端 POP3 邮件列表提供的邮件
-./hust-mail-cli sync --protocol pop3 --user 你的邮箱@hust.edu.cn
+./hust-mail-cli sync --protocol pop3 --host pop.hust.edu.cn --port 995 --days 0 --user 你的邮箱@hust.edu.cn
 
 # 本地列表：每行一个 JSON，包含 path、subject、from、date
 ./hust-mail-cli list --dir ~/HUST-Mail/
 
-# 读取本地完整 MIME 原文
+# 展示本地解码后的邮件正文
 ./hust-mail-cli read ~/HUST-Mail/账号目录/文件夹目录/UIDVALIDITY/7.eml
+
+# 输出完整 MIME 原文（保留旧版 read 的原文输出方式）
+./hust-mail-cli read --raw /path/to/message.eml
+
+# 搜索本地解码后的主题、发件人、收件人和正文
+./hust-mail-cli search "会议"
+./hust-mail-cli search --from "example.com" --subject "通知" --limit 20
+./hust-mail-cli search --body "项目进展" --dir ~/HUST-Mail/
+
+# 列出附件编号、文件名、类型及解码后大小（JSON Lines）
+./hust-mail-cli attachments list /path/to/message.eml
+
+# 导出全部附件，或仅导出第 2 个附件
+./hust-mail-cli attachments export /path/to/message.eml --output ~/Downloads/mail-attachments
+./hust-mail-cli attachments export /path/to/message.eml --index 2 --output ./attachments
 
 # 生成 shell 补全脚本
 ./hust-mail-cli completion zsh
 ```
 
-`read` 输出原始 `.eml`，尚未提供 MIME 正文渲染或单独导出附件。`list` 会解码邮件主题；发件人保留原始头字段值。本地命令不连接服务器。
+`read` 默认解码 MIME 正文和字符集，优先展示纯文本；仅有 HTML 时转换为文本，省略脚本、样式，不执行代码或加载外部资源。展示时过滤终端控制字符；`--raw` 保留原始字节。每封邮件最多解析 8 MiB 解码后文本，超限或无法解码时明确报错，可改用 `--raw`。
+
+`search` 按不区分大小写的字面子串匹配，位置参数与各字段条件组合时取 AND。正文使用与 `read` 相同的文本选择规则，不搜索附件内容；输出 JSON Lines，含绝对路径、主题、发件人、收件人、日期及附件数量。默认不限制结果数量；无匹配时输出为空并成功退出。搜索逐封扫描本地 `.eml`，不建立索引；遇到无法解析的邮件会报错。
+
+附件编号从 1 开始，包含带文件名的内联资源（如图片）。附件只解码 Base64、Quoted-Printable 等传输编码，保留原始字符集字节，不将 GBK 等文本附件转换为 UTF-8；列表中的大小对应实际导出字节数。导出的文件带 `001-` 等编号前缀，移除原始文件名中的目录路径，权限为 `0600`。导出不覆盖已有文件或符号链接；解码失败会清理临时文件。`--index 0` 或省略编号表示导出全部附件。
+
+`list` 会解码邮件主题；发件人保留原始头字段值。上述本地命令均不连接服务器，不改变原始归档，也不修改邮件的远端状态。附件导出只向指定输出目录写文件。
 
 ## 连接与只读行为
 
-默认主机为 `mail.hust.edu.cn`。华科[官方说明](https://ncc.hust.edu.cn/info/1445/6060.htm)要求启用 SSL，并明确 IMAP 接收端口为 993。POP3 默认使用标准 TLS 端口 995；此端口尚未用真实华科账号验证。可通过 `--host`、`--port` 覆盖。只支持隐式 TLS，验证服务器证书，最低 TLS 1.2。
+默认使用邮箱网页配置中提供的 `imap.hust.edu.cn:993` 收信，预留 `smtp.hust.edu.cn:465` 发信配置。POP3 兼容地址为 `pop.hust.edu.cn:995`。可通过 `--host`、`--port` 覆盖收信地址。只支持隐式 TLS，验证服务器证书，最低 TLS 1.2。已有配置中的主机会继续生效；更换主机会生成独立账号归档目录，保留旧归档，可能重复下载。
 
 - IMAP 使用 `EXAMINE` 只读选择文件夹，使用 `BODY.PEEK[]` 读取，不标记已读，不修改标志，不执行删除、清除或上传命令。
 - POP3 仅使用 `USER`、`PASS`、`UIDL`、`RETR` 和 `QUIT`，不发送 `DELE`。POP3 没有 IMAP 的文件夹和已读标志能力；下载范围取决于服务端 POP3 设置。服务端可能记录访问时间、下载状态或执行自身保留策略。
@@ -139,7 +177,20 @@ CLI 不提供密码命令行参数，不输出密码，也不会把密码写入�
 
 目录权限为 `0700`，邮件文件为 `0600`。下载先写临时文件，成功后才发布最终文件；失败可重跑。工具不会校验已有非空文件的完整性，也不提供归档加密。
 
-同一账号使用 `.sync.lock` 防止并发同步。强制终止可能遗留锁和 `.download-*` 临时文件；确认该账号没有同步进程运行后，可手动删除它们，再运行同步。
+## 异常退出与同步恢复
+
+中断后直接重跑 `hust-mail-cli sync`，已完成的邮件会自动跳过，无需额外修复命令。
+
+```sh
+# SSH 后台长期同步
+nohup hust-mail-cli sync > ~/hust-mail-sync.log 2>&1 < /dev/null &
+```
+
+同步使用系统 `flock` 独占锁，即使进程被 `kill -9` 结束，内核也会释放它。新版残留的 PID 标记会在下一次同步时自动回收。旧版纯 PID 锁只有在确认原进程不存在时才会回收；PID 仍存活、无权检查或标记无法识别时，工具拒绝自动删除，防止误抢正在使用的归档。
+
+`.sync.flock` 是长期保留的内核锁文件，存在本身是正常现象，**不要手工删除它**。异常退出留下的 `.download-*`、`.lock-*` 临时文件不会阻止重跑；如需清理，应在确认该账号没有同步进程运行后操作，保留 `.eml` 邮件。
+
+程序处理 `SIGHUP`、`SIGINT` 和 `SIGTERM`，收到信号后取消操作并清理锁。SSH 断开可能终止裸 `&` 后台任务；这不代表任务会持续运行，但重跑不会因新版残留锁而被永久阻塞。希望断开连接后继续同步，请使用 `nohup` 或 `tmux`。锁机制面向 Linux/macOS 本地文件系统；不支持锁的文件系统会明确报错。
 
 ## 项目结构与验证
 
@@ -150,4 +201,6 @@ go test -race ./...
 go vet ./...
 ```
 
-协议测试使用内存连接，限制实际发送的命令，并覆盖只读读取、增量同步、UIDVALIDITY 变更、POP3 点转义和下载中断。尚未连接真实华科邮箱进行验证。
+协议测试使用内存连接，限制实际发送的命令，并覆盖只读读取、增量同步、UIDVALIDITY 变更、POP3 点转义和下载中断。MIME 测试覆盖字符集与传输编码、正文选择、HTML 转文本、搜索过滤，以及附件导出的路径与覆盖保护。
+
+真实账号已验证 IMAP 的小文件夹同步、重跑及标志不变；POP3 已验证登录与 UIDL，尚未验证 CLI 下载。新增本地功能已用 macOS 上 138 封真实归档验证，并在 Linux 主机上执行原生测试和归档读取检查；未进行全量邮箱同步。
