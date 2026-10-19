@@ -70,4 +70,4 @@ hust-mail-cli folders
 
 如果只通过 `make` 构建而尚未安装，在仓库根目录使用 `./bin/hust-mail-cli folders`。
 
-更多配置、同步范围及命令示例见 [README](../README.md#配置与专用密码)。
+更多配置、同步范围及命令示例见 [配置指南](configuration.md)与[命令参考](command-reference.md)。
