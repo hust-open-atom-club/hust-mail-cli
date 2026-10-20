@@ -118,22 +118,3 @@ func TestQuietProgress(t *testing.T) {
 		t.Fatal("quiet emitted progress")
 	}
 }
-
-func TestPOP3ReportsProgress(t *testing.T) {
-	conn, done := popPeer(t, false)
-	var log, out bytes.Buffer
-	p := newSyncProgress(&log, false)
-	err := syncPOP3(conn, t.TempDir(), "test:995", "user@hust.edu.cn", "dedicated-password", &out, p)
-	p.close()
-	conn.Close()
-	<-done
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.received == 0 || !strings.Contains(log.String(), "100% 1/1") || !strings.Contains(log.String(), "downloaded=1") {
-		t.Fatalf("POP3 progress: %s", &log)
-	}
-	if strings.Contains(out.String(), "█") || !strings.Contains(out.String(), "Complete:") {
-		t.Fatal("progress polluted stdout summary")
-	}
-}

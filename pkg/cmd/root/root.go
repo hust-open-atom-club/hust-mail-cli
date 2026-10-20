@@ -16,7 +16,7 @@ import (
 func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "hust-mail-cli <command>",
-		Short:         "Read and archive HUST email using read-only IMAP by default",
+		Short:         "Read and archive HUST email using read-only IMAP",
 		Long:          "Read and archive HUST email over verified TLS. Remote deletion, flag changes and SMTP sending are not implemented.",
 		SilenceErrors: true, SilenceUsage: true,
 	}
@@ -54,8 +54,8 @@ func newReceiveCommand(name, short string) *cobra.Command {
 	flags := cmd.Flags()
 	flags.StringVar(&opts.User, "user", "", "Full email address (overrides config and HUST_MAIL_USER)")
 	flags.StringVar(&opts.Host, "host", config.DefaultIMAPHost, "Mail server hostname")
-	flags.StringVar(&opts.Protocol, "protocol", "imap", "Receiving protocol: imap (read-only default) or pop3 (compatibility)")
-	flags.IntVar(&opts.Port, "port", 0, "TLS port (default: IMAP 993, POP3 995)")
+	flags.StringVar(&opts.Protocol, "protocol", "imap", "Receiving protocol: imap (read-only; only supported value)")
+	flags.IntVar(&opts.Port, "port", 0, "IMAP TLS port (default: 993)")
 	flags.DurationVar(&opts.Timeout, "timeout", 30*time.Minute, "Total connection and sync timeout; excludes password input")
 	if name == "sync" {
 		flags.BoolVar(&opts.RetryIgnored, "retry-ignored", false, "Retry IMAP messages previously recorded as unavailable")

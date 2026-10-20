@@ -85,14 +85,6 @@ hust-mail-cli sync --days 0 > ~/hust-mail-sync.log 2>&1
 hust-mail-cli sync --quiet
 ```
 
-### POP3 兼容收信
-
-```sh
-hust-mail-cli sync --protocol pop3 --host pop.hust.edu.cn --port 995 --days 0
-```
-
-POP3 不支持文件夹选择和服务器收信时间筛选；配置中的 `mailbox` 必须为空。它与 IMAP 使用独立归档目录，不发送 `DELE`。下载范围和保留策略取决于服务端设置。
-
 ## folders 列出文件夹
 
 只读连接 IMAP 邮箱，列出可选择的文件夹，便于确定 `sync --mailbox` 的名称。

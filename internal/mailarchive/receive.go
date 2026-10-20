@@ -70,9 +70,6 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 	// Closing the socket also interrupts a blocked IMAP command or literal read.
 	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stopClose()
-	if opts.Protocol == "pop3" {
-		return syncPOP3(conn, opts.Dir, net.JoinHostPort(opts.Host, strconv.Itoa(opts.Port)), opts.User, password, out, progress)
-	}
 	c := imapclient.New(conn, nil)
 	defer c.Close()
 	progress.setPhase("authenticating")
@@ -155,24 +152,11 @@ func validateOptions(mode string, opts *Options) error {
 	if opts.Days < 0 || opts.Days > 36500 {
 		return errors.New("--days/config days must be between 0 and 36500 (0 means all time)")
 	}
-	if opts.RetryIgnored && opts.Protocol == "pop3" {
-		return errors.New("--retry-ignored requires IMAP")
-	}
-	if opts.Days > 0 && opts.Protocol == "pop3" {
-		return errors.New("receive-time filtering requires IMAP; use --protocol imap or --days 0 for POP3")
-	}
-	if opts.Protocol != "imap" && opts.Protocol != "pop3" {
-		return errors.New("--protocol must be imap or pop3")
-	}
-	if opts.Protocol == "pop3" && (mode == "folders" || opts.Mailbox != "") {
-		return errors.New("POP3 has no folders; use sync without --mailbox")
+	if opts.Protocol != "imap" {
+		return errors.New("--protocol/config protocol must be imap; POP3 is not supported and SMTP sending is not implemented")
 	}
 	if opts.Port == 0 {
-		if opts.Protocol == "imap" {
-			opts.Port = 993
-		} else {
-			opts.Port = 995
-		}
+		opts.Port = 993
 	}
 	if opts.Port < 1 || opts.Port > 65535 {
 		return errors.New("invalid TLS port")

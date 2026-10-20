@@ -145,7 +145,7 @@ func TestConfigPrecedence(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{"user":"config@example.com","password":"config-password","protocol":"pop3","port":995,"timeout":"2m","dir":"archive"}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"user":"config@example.com","password":"config-password","protocol":"imap","port":1993,"timeout":"2m","dir":"archive"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := NewCmdRoot(io.Discard, io.Discard)
@@ -163,7 +163,7 @@ func TestConfigPrecedence(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if got.User != "flag@example.com" || got.Password != "env-password" || got.Protocol != "pop3" || got.Port != 0 || got.Timeout != 2*time.Minute || got.Dir != "archive" {
+	if got.User != "flag@example.com" || got.Password != "env-password" || got.Protocol != "imap" || got.Port != 0 || got.Timeout != 2*time.Minute || got.Dir != "archive" {
 		t.Fatal("configuration precedence failed")
 	}
 	if err := os.Unsetenv("HUST_MAIL_USER"); err != nil {
@@ -238,5 +238,68 @@ func TestArchiveDirectoryDefaultAndOverride(t *testing.T) {
 		if err := cmd.Execute(); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestPOP3RejectedFromFlagsAndConfig(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("HUST_MAIL_USER", "")
+	t.Setenv("HUST_MAIL_PASSWORD", "")
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"protocol":"pop3","host":"pop.hust.edu.cn","port":995}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"sync", "folders"} {
+		for _, source := range []string{"flag", "config"} {
+			t.Run(command+"/"+source, func(t *testing.T) {
+				var out, stderr bytes.Buffer
+				cmd := NewCmdRoot(&out, &stderr)
+				args := []string{command, "--protocol", "pop3"}
+				if source == "config" {
+					args = []string{command, "--config", path}
+				}
+				cmd.SetArgs(args)
+				err := cmd.ExecuteContext(context.Background())
+				if err == nil || !strings.Contains(err.Error(), "POP3 is not supported") {
+					t.Fatalf("expected unsupported protocol error before credentials or network access; got %v", err)
+				}
+				if out.Len() != 0 || stderr.Len() != 0 {
+					t.Fatalf("unexpected output or password prompt: stdout=%q stderr=%q", &out, &stderr)
+				}
+			})
+		}
+	}
+}
+
+func TestLegacyPOP3ArchiveRemainsReadable(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	message := "Subject: preserved archive\r\n\r\nlocal body\r\n"
+	path := filepath.Join(dir, "legacy.eml")
+	if err := os.WriteFile(path, []byte(message), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfg, []byte(`{"protocol":"pop3","dir":`+strconv.Quote(dir)+`}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"list", "--config", cfg},
+		{"search", "preserved", "--config", cfg},
+		{"read", "--raw", path},
+	} {
+		var out bytes.Buffer
+		cmd := NewCmdRoot(&out, io.Discard)
+		cmd.SetArgs(args)
+		if err := cmd.ExecuteContext(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), "preserved archive") {
+			t.Fatalf("legacy message missing from %v output: %q", args, &out)
+		}
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != message {
+		t.Fatalf("local message changed: %q, %v", got, err)
 	}
 }
