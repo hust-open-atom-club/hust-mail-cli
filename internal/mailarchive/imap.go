@@ -34,7 +34,9 @@ func listFolders(c *imapclient.Client) ([]string, error) {
 	return boxes, nil
 }
 
-func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time) (downloaded, skipped int, err error) {
+func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time, settings ...imapSyncOptions) (downloaded, skipped int, err error) {
+	options := firstIMAPOptions(settings)
+	progress := options.progress
 	// ReadOnly emits EXAMINE, never SELECT in read/write mode.
 	selected, err := c.Select(box, &imap.SelectOptions{ReadOnly: true}).Wait()
 	if err != nil {
@@ -56,12 +58,16 @@ func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time) (downl
 		// candidate day for timezone differences, then check INTERNALDATE exactly.
 		criteria.Since = cutoff.UTC().Add(-24 * time.Hour)
 	}
+	progress.setPhase("searching mail")
 	data, err := c.UIDSearch(criteria, nil).Wait()
 	if err != nil {
 		return 0, 0, err
 	}
 	var failures []error
-	for _, uid := range data.AllUIDs() {
+	uids := data.AllUIDs()
+	progress.listed(len(uids))
+	for _, uid := range uids {
+		progress.message(strconv.FormatUint(uint64(uid), 10))
 		path := filepath.Join(dir, strconv.FormatUint(uint64(uid), 10)+".eml")
 		info, statErr := os.Lstat(path)
 		if statErr == nil {
@@ -70,24 +76,28 @@ func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time) (downl
 			}
 			if info.Size() > 0 {
 				skipped++
+				progress.finish("existing")
 				continue
 			}
 		} else if !errors.Is(statErr, os.ErrNotExist) {
 			return downloaded, skipped, statErr
 		}
-		if err = atomicWrite(path, func(w io.Writer) error { return fetchMessage(c, uid, w, cutoff) }); errors.Is(err, errOutsideRange) {
+		if err = atomicWrite(path, func(w io.Writer) error { return fetchMessage(c, uid, progressWriter{w, progress}, cutoff) }); errors.Is(err, errOutsideRange) {
+			progress.finish("filtered")
 			err = nil
 			continue
 		} else if err != nil {
 			var unavailable *unavailableMessageError
 			if errors.As(err, &unavailable) {
 				failures = append(failures, err)
+				progress.finish("ignored")
 				err = nil
 				continue
 			}
 			return
 		}
 		downloaded++
+		progress.finish("downloaded")
 	}
 	if len(failures) > 0 {
 		err = &incompleteFolderError{failures: failures}
