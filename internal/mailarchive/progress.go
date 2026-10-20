@@ -272,13 +272,3 @@ func firstProgress(progress []*syncProgress) *syncProgress {
 	}
 	return nil
 }
-
-// IMAP sync settings keep progress optional for protocol tests.
-type imapSyncOptions struct{ progress *syncProgress }
-
-func firstIMAPOptions(options []imapSyncOptions) imapSyncOptions {
-	if len(options) > 0 {
-		return options[0]
-	}
-	return imapSyncOptions{}
-}

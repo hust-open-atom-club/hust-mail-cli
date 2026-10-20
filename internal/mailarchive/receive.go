@@ -23,6 +23,7 @@ type Options struct {
 	Password                           string
 	Port                               int
 	Quiet                              bool
+	RetryIgnored                       bool
 	Days                               int
 	Timeout                            time.Duration
 }
@@ -110,7 +111,7 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 		if err := atomicWrite(filepath.Join(root, "account.json"), func(w io.Writer) error { _, err := w.Write(meta); return err }); err != nil {
 			return err
 		}
-		syncErr = syncMailboxes(c, root, boxes, cutoff, out, errOut, imapSyncOptions{progress: progress})
+		syncErr = syncMailboxes(c, root, boxes, cutoff, out, errOut, imapSyncOptions{progress: progress, retryIgnored: opts.RetryIgnored})
 	}
 	if err := c.Logout().Wait(); err != nil {
 		return errors.Join(syncErr, fmt.Errorf("IMAP logout: %w", err))
@@ -132,9 +133,12 @@ func syncMailboxes(c *imapclient.Client, root string, boxes []string, cutoff tim
 			if !ok {
 				return fmt.Errorf("folder %q: %w", box, err)
 			}
-			ignored += len(partial.failures)
-			fmt.Fprintf(errOut, "warning: ignoring unavailable mail in folder %q: %v\n", box, err)
-			fmt.Fprintf(out, "%q: downloaded=%d existing=%d ignored=%d\n", box, n, skipped, len(partial.failures))
+			count := len(partial.failures) + partial.cached
+			ignored += count
+			if len(partial.failures) > 0 {
+				fmt.Fprintf(errOut, "warning: ignoring unavailable mail in folder %q: %v\n", box, err)
+			}
+			fmt.Fprintf(out, "%q: downloaded=%d existing=%d ignored=%d\n", box, n, skipped, count)
 		} else {
 			fmt.Fprintf(out, "%q: downloaded=%d existing=%d\n", box, n, skipped)
 		}
@@ -150,6 +154,9 @@ func syncMailboxes(c *imapclient.Client, root string, boxes []string, cutoff tim
 func validateOptions(mode string, opts *Options) error {
 	if opts.Days < 0 || opts.Days > 36500 {
 		return errors.New("--days/config days must be between 0 and 36500 (0 means all time)")
+	}
+	if opts.RetryIgnored && opts.Protocol == "pop3" {
+		return errors.New("--retry-ignored requires IMAP")
 	}
 	if opts.Days > 0 && opts.Protocol == "pop3" {
 		return errors.New("receive-time filtering requires IMAP; use --protocol imap or --days 0 for POP3")

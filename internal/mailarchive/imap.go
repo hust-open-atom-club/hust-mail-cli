@@ -64,6 +64,7 @@ func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time, settin
 		return 0, 0, err
 	}
 	var failures []error
+	var cached int
 	uids := data.AllUIDs()
 	progress.listed(len(uids))
 	for _, uid := range uids {
@@ -82,6 +83,15 @@ func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time, settin
 		} else if !errors.Is(statErr, os.ErrNotExist) {
 			return downloaded, skipped, statErr
 		}
+		knownIgnored, cacheErr := wasIgnored(dir, uid)
+		if cacheErr != nil {
+			return downloaded, skipped, cacheErr
+		}
+		if knownIgnored && !options.retryIgnored {
+			cached++
+			progress.finish("ignored")
+			continue
+		}
 		if err = atomicWrite(path, func(w io.Writer) error { return fetchMessage(c, uid, progressWriter{w, progress}, cutoff) }); errors.Is(err, errOutsideRange) {
 			progress.finish("filtered")
 			err = nil
@@ -89,6 +99,11 @@ func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time, settin
 		} else if err != nil {
 			var unavailable *unavailableMessageError
 			if errors.As(err, &unavailable) {
+				if unavailable.cacheable {
+					if cacheErr := rememberIgnored(dir, unavailable); cacheErr != nil {
+						return downloaded, skipped, cacheErr
+					}
+				}
 				failures = append(failures, err)
 				progress.finish("ignored")
 				err = nil
@@ -96,11 +111,16 @@ func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time, settin
 			}
 			return
 		}
+		if knownIgnored {
+			if err = forgetIgnored(dir, uid); err != nil {
+				return
+			}
+		}
 		downloaded++
 		progress.finish("downloaded")
 	}
-	if len(failures) > 0 {
-		err = &incompleteFolderError{failures: failures}
+	if len(failures) > 0 || cached > 0 {
+		err = &incompleteFolderError{failures: failures, cached: cached}
 	}
 	return
 }
@@ -110,17 +130,27 @@ var errOutsideRange = errors.New("message received before requested cutoff")
 // Only missing content may be deferred until the end of a sync. Transport,
 // identity and local storage errors still stop immediately.
 type unavailableMessageError struct {
-	uid    imap.UID
-	detail string
+	uid       imap.UID
+	detail    string
+	cacheable bool
+	size      int64
 }
 
 func (e *unavailableMessageError) Error() string {
 	return fmt.Sprintf("UID %d: %s", e.uid, e.detail)
 }
 
-type incompleteFolderError struct{ failures []error }
+type incompleteFolderError struct {
+	failures []error
+	cached   int
+}
 
-func (e *incompleteFolderError) Error() string   { return errors.Join(e.failures...).Error() }
+func (e *incompleteFolderError) Error() string {
+	if len(e.failures) == 0 {
+		return fmt.Sprintf("%d cached unavailable messages", e.cached)
+	}
+	return errors.Join(e.failures...).Error()
+}
 func (e *incompleteFolderError) Unwrap() []error { return e.failures }
 
 func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer, cutoff time.Time) error {
@@ -180,7 +210,7 @@ func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer, cutoff time.T
 				return &unavailableMessageError{uid: uid, detail: "server no longer returned the UID after the body request; retry sync"}
 			}
 			if len(metadata) == 1 && metadata[0].UID == uid {
-				return &unavailableMessageError{uid: uid, detail: fmt.Sprintf("server returned no body although the message still exists (RFC822.SIZE=%d bytes); retry or check the message in webmail", metadata[0].RFC822Size)}
+				return &unavailableMessageError{uid: uid, cacheable: true, size: metadata[0].RFC822Size, detail: fmt.Sprintf("server returned no body although the message still exists (RFC822.SIZE=%d bytes); recorded for future syncs; use --retry-ignored to retry", metadata[0].RFC822Size)}
 			}
 		}
 		return fmt.Errorf("incomplete response for UID %d (mail may have been removed remotely); rerun sync", uid)
