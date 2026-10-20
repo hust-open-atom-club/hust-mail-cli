@@ -90,7 +90,7 @@ func (s *searchIndex) save(rel string, info os.FileInfo, message parsedMessage, 
 		return
 	}
 	record := searchIndexRecord{Version: searchIndexVersion, Path: rel, Size: info.Size(), ModTime: info.ModTime().UnixNano(), Body: body, BodyError: bodyError, Message: message}
-	if err := atomicWrite(s.recordPath(rel), func(w io.Writer) error { return json.NewEncoder(w).Encode(record) }); err != nil {
+	if err := writeSearchCache(s.recordPath(rel), record); err != nil {
 		s.warn(err)
 		s.disabled = true
 	}
@@ -167,4 +167,23 @@ func (s *searchIndex) prepare(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// A cache record is disposable. Atomic publication prevents partial JSON from
+// being observed; unlike source .eml writes it does not fsync every small file.
+// After a power loss an absent/invalid record is rebuilt from the source.
+func writeSearchCache(path string, record searchIndexRecord) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".index-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+	if err := json.NewEncoder(f).Encode(record); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }

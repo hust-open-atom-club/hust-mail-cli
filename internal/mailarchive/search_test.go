@@ -232,6 +232,7 @@ func BenchmarkSearchArchive(b *testing.B) {
 		opts SearchOptions
 	}{
 		{"body_without_index", SearchOptions{Body: "needle", NoIndex: true}},
+		{"body_rebuild_index", SearchOptions{Body: "needle", RebuildIndex: true}},
 		{"body_warm_index", SearchOptions{Body: "needle"}},
 		{"headers_without_index", SearchOptions{Subject: "staff", NoIndex: true}},
 	} {
