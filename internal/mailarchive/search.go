@@ -14,47 +14,139 @@ import (
 type SearchOptions struct {
 	Query, Subject, From, To, Body string
 	Limit                          int
+	NoIndex, RebuildIndex          bool
 }
 
-func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer) error {
+// Search writes result JSON Lines to out and optional diagnostics to errOut.
+// Bad individual messages are skipped; directory, cancellation and output
+// failures remain fatal. Source mail is never modified.
+func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, errOut ...io.Writer) error {
 	if opts.Limit < 0 {
 		return errors.New("--limit must be non-negative")
+	}
+	if opts.NoIndex && opts.RebuildIndex {
+		return errors.New("--no-index and --rebuild-index cannot be used together")
 	}
 	if opts.Query+opts.Subject+opts.From+opts.To+opts.Body == "" {
 		return errors.New("provide a query or a search field")
 	}
-	count := 0
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	root, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return errors.New("search archive must be a real directory")
+	}
+	warnings := io.Discard
+	if len(errOut) > 0 && errOut[0] != nil {
+		warnings = errOut[0]
+	}
+	var scanned, matched, skipped int
+	defer func() {
+		if skipped > 0 {
+			fmt.Fprintf(warnings, "Search: scanned=%d matched=%d skipped=%d\n", scanned, matched, skipped)
+		}
+	}()
+	cacheWarned := false
+	index := searchIndex{root: root, dir: filepath.Join(root, ".search-index"), disabled: opts.NoIndex, rebuild: opts.RebuildIndex, warn: func(err error) {
+		if !cacheWarned {
+			fmt.Fprintf(warnings, "warning: search index unavailable or invalid; reading source mail: %q\n", err.Error())
+			cacheWarned = true
+		}
+	}}
+	index.prepare(ctx)
 	enc := json.NewEncoder(out)
 	enc.SetEscapeHTML(false)
 	contains := func(value, query string) bool {
 		return strings.Contains(strings.ToLower(value), strings.ToLower(query))
 	}
-	return filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
+	return filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() && d.Name() == ".search-index" {
+			return filepath.SkipDir
 		}
 		if !d.Type().IsRegular() || !strings.HasSuffix(path, ".eml") {
 			return nil
 		}
-		m, err := walkMessage(ctx, path, true, nil)
+		scanned++
+		fail := func(err error) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			skipped++
+			fmt.Fprintf(warnings, "warning: skipping unreadable mail %q: %q\n", path, err.Error())
+			return nil
+		}
+		info, err := d.Info()
 		if err != nil {
-			return fmt.Errorf("search %s: %w", path, err)
+			return fail(err)
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		record, cached := index.load(rel, info)
+		m := record.Message
+		if !cached {
+			m, err = searchHeaders(ctx, path)
+			if err != nil {
+				return fail(err)
+			}
+		}
+		if !contains(m.Subject, opts.Subject) || !contains(m.From, opts.From) || !contains(m.To, opts.To) {
+			if !cached {
+				index.save(rel, info, m, false, "")
+			}
+			return nil
+		}
+		headerMatch := contains(m.Subject+"\n"+m.From+"\n"+m.To, opts.Query)
+		needsBody := opts.Body != "" || opts.Query != "" && !headerMatch
+		bodyKnown := cached && record.Body
+		if needsBody && !bodyKnown {
+			if cached && record.BodyError != "" {
+				return fail(errors.New(record.BodyError))
+			}
+			parsed, err := walkMessage(ctx, path, true, nil)
+			if err != nil {
+				var pathErr *os.PathError
+				if ctx.Err() == nil && !errors.As(err, &pathErr) {
+					index.save(rel, info, m, false, err.Error())
+				}
+				return fail(err)
+			}
+			m, bodyKnown = parsed, true
+			index.save(rel, info, m, true, "")
+		}
+		if !cached && !needsBody {
+			index.save(rel, info, m, false, "")
 		}
 		if !contains(m.Subject, opts.Subject) || !contains(m.From, opts.From) || !contains(m.To, opts.To) || !contains(m.Body, opts.Body) || !contains(m.Subject+"\n"+m.From+"\n"+m.To+"\n"+m.Body, opts.Query) {
 			return nil
 		}
-		abs, err := filepath.Abs(path)
-		if err != nil {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := enc.Encode(map[string]any{"path": abs, "subject": m.Subject, "from": m.From, "to": m.To, "date": m.Date, "attachments": len(m.Attachments)}); err != nil {
+		result := map[string]any{"path": path, "subject": m.Subject, "from": m.From, "to": m.To, "date": m.Date}
+		if bodyKnown {
+			result["attachments"] = len(m.Attachments)
+		}
+		if err := enc.Encode(result); err != nil {
 			return err
 		}
-		count++
-		if opts.Limit > 0 && count >= opts.Limit {
+		matched++
+		if opts.Limit > 0 && matched >= opts.Limit {
 			return filepath.SkipAll
 		}
 		return nil

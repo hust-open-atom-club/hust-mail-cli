@@ -12,6 +12,8 @@ Keep protocol and storage logic outside Cobra handlers. Commands include `sync`,
 
 Limit protocol support to IMAP for receiving and SMTP for sending. POP3 is out of scope: do not add or retain it as a compatibility option. IMAP must remain read-only. SMTP implementation remains deferred; do not enable IMAP writes as part of SMTP work.
 
+Search indexes are disposable derived data: verify source fingerprints before reuse, preserve `--no-index` for read-only archives, and bump `searchIndexVersion` when decoded search semantics change.
+
 Target Linux/macOS, excluding Windows. Preserve `CGO_ENABLED=0` builds. Cross-compile with `sh scripts/build-platforms.sh`; report compilation separately from target runtime validation.
 
 ## Build, Test, and Development Commands

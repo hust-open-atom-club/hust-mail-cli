@@ -47,7 +47,7 @@ func newSearchCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return mailarchive.Search(cmd.Context(), archiveDir, opts, cmd.OutOrStdout())
+		return mailarchive.Search(cmd.Context(), archiveDir, opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	}}
 	f := cmd.Flags()
 	f.StringVar(&dir, "dir", config.DefaultArchiveDir, "Local archive directory")
@@ -55,6 +55,8 @@ func newSearchCommand() *cobra.Command {
 	f.StringVar(&opts.From, "from", "", "Sender substring (case-insensitive)")
 	f.StringVar(&opts.To, "to", "", "Recipient substring (case-insensitive)")
 	f.StringVar(&opts.Body, "body", "", "Decoded text body substring (case-insensitive)")
+	f.BoolVar(&opts.NoIndex, "no-index", false, "Read source mail without reading or writing the search index")
+	f.BoolVar(&opts.RebuildIndex, "rebuild-index", false, "Clear the disposable search index and rebuild it on demand")
 	f.IntVar(&opts.Limit, "limit", 0, "Maximum results; 0 means unlimited")
 	return cmd
 }
