@@ -70,6 +70,13 @@ func (s *searchIndex) load(rel string, info os.FileInfo) (searchIndexRecord, boo
 	if record.Version != searchIndexVersion || record.Path != rel || record.Size != info.Size() || record.ModTime != info.ModTime().UnixNano() {
 		return searchIndexRecord{}, false
 	}
+	// The path may have been atomically replaced since WalkDir took info.
+	// Validate again after decoding the cache, including identity even when a
+	// replacement preserves the original size and modification timestamp.
+	current, err := os.Lstat(filepath.Join(s.root, rel))
+	if err != nil || !current.Mode().IsRegular() || !os.SameFile(info, current) || current.Size() != info.Size() || !current.ModTime().Equal(info.ModTime()) {
+		return searchIndexRecord{}, false
+	}
 	return record, true
 }
 

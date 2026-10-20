@@ -282,3 +282,64 @@ func TestSearchIndexEntrySymlinkDoesNotExposeExternalData(t *testing.T) {
 		t.Fatal("cache was not rebuilt as a regular file", err)
 	}
 }
+
+func TestSearchIndexRejectsSourceChangesAfterSnapshot(t *testing.T) {
+	for _, mode := range []string{"replacement", "replacement_same_fingerprint", "modified", "removed"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			path := searchTestMail(t, dir, "message", "Subject: old\r\n\r\nneedle old")
+			stamp := time.Unix(1700000000, 0)
+			if err := os.Chtimes(path, stamp, stamp); err != nil {
+				t.Fatal(err)
+			}
+			if err := Search(context.Background(), dir, SearchOptions{Body: "needle"}, io.Discard); err != nil {
+				t.Fatal(err)
+			}
+			// Simulate replacement after WalkDir's d.Info, before cache lookup.
+			snapshot, err := os.Lstat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			updated := "Subject: new\r\n\r\nneedle updated"
+			switch mode {
+			case "removed":
+				err = os.Remove(path)
+			case "modified":
+				err = os.WriteFile(path, []byte(updated), 0600)
+			default:
+				if mode == "replacement_same_fingerprint" {
+					updated = "Subject: new\r\n\r\nneedle new"
+				}
+				tmp := filepath.Join(dir, "replacement.tmp")
+				if err := os.WriteFile(tmp, []byte(updated), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if mode == "replacement_same_fingerprint" {
+					if err := os.Chtimes(tmp, snapshot.ModTime(), snapshot.ModTime()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				err = os.Rename(tmp, path)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "replacement_same_fingerprint" {
+				current, err := os.Lstat(path)
+				if err != nil || current.Size() != snapshot.Size() || !current.ModTime().Equal(snapshot.ModTime()) || os.SameFile(snapshot, current) {
+					t.Fatal("replacement must preserve size/mtime but change identity", err)
+				}
+			}
+			index := searchIndex{root: dir, dir: filepath.Join(dir, ".search-index"), warn: func(err error) { t.Fatal(err) }}
+			if record, hit := index.load("message.eml", snapshot); hit {
+				t.Fatalf("reused stale cache after %s: %+v", mode, record)
+			}
+			if mode != "removed" && mode != "replacement_same_fingerprint" {
+				var out bytes.Buffer
+				if err := Search(context.Background(), dir, SearchOptions{Body: "updated"}, &out); err != nil || !strings.Contains(out.String(), `"subject":"new"`) {
+					t.Fatalf("changed source not searchable: %v %s", err, &out)
+				}
+			}
+		})
+	}
+}

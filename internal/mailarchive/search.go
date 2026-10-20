@@ -100,6 +100,15 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 		record, cached := index.load(rel, info)
 		m := record.Message
 		if !cached {
+			// Cache validation may have observed a replacement or removal. Use
+			// fresh source metadata for the fallback read and any new cache.
+			info, err = os.Lstat(path)
+			if err != nil {
+				return fail(err)
+			}
+			if !info.Mode().IsRegular() {
+				return fail(errors.New("source mail is no longer a regular file"))
+			}
 			m, err = searchHeaders(ctx, path)
 			if err != nil {
 				return fail(err)
