@@ -18,6 +18,7 @@ func ListAttachments(ctx context.Context, path string, out io.Writer) error {
 		return err
 	}
 	enc := json.NewEncoder(out)
+	enc.SetEscapeHTML(false)
 	for _, a := range m.Attachments {
 		if err := enc.Encode(a); err != nil {
 			return err
@@ -106,6 +107,7 @@ func ExportAttachments(ctx context.Context, path, dir string, index int, out io.
 		published = append(published, f.name)
 	}
 	enc := json.NewEncoder(out)
+	enc.SetEscapeHTML(false)
 	for _, f := range files {
 		abs, err := filepath.Abs(filepath.Join(dir, f.name))
 		if err != nil {

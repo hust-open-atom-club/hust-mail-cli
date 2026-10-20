@@ -25,6 +25,7 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer) 
 	}
 	count := 0
 	enc := json.NewEncoder(out)
+	enc.SetEscapeHTML(false)
 	contains := func(value, query string) bool {
 		return strings.Contains(strings.ToLower(value), strings.ToLower(query))
 	}
