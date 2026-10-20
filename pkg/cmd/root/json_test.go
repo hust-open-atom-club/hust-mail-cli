@@ -89,3 +89,35 @@ func TestGlobalJSONReceiveOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchJSONSkipsMalformedMailAndCacheFlags(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a-bad.eml"), []byte("invalid mail header\r\n\r\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b-good.eml"), []byte("Subject: 教职通知\r\n\r\nneedle"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, flag := range []string{"--no-index", "--rebuild-index"} {
+		var out, stderr bytes.Buffer
+		cmd := NewCmdRoot(&out, &stderr)
+		cmd.SetArgs([]string{"--json", "search", "--body", "needle", "--dir", dir, flag})
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err)
+		}
+		var row map[string]any
+		dec := json.NewDecoder(&out)
+		if err := dec.Decode(&row); err != nil || row["subject"] != "教职通知" {
+			t.Fatalf("bad mail blocked valid JSON result: %v %v", row, err)
+		}
+		if err := dec.Decode(new(any)); err != io.EOF || !strings.Contains(stderr.String(), "scanned=2 matched=1 skipped=1") {
+			t.Fatalf("diagnostics polluted stdout or counts missing: %v %s", err, &stderr)
+		}
+		if flag == "--no-index" {
+			if _, err := os.Stat(filepath.Join(dir, ".search-index")); !os.IsNotExist(err) {
+				t.Fatal("--no-index wrote to archive", err)
+			}
+		}
+	}
+}

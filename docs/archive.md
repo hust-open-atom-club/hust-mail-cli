@@ -9,3 +9,5 @@
 归档默认保存在 `~/HUST-Mail/`，可以通过配置的 `dir` 或同步命令的 `--dir` 修改。[同步时间范围](command-reference.md#时间范围)只限制新增下载，不会清理已归档邮件。
 
 读取和搜索请参考 [list](command-reference.md#list-列出本地邮件)、[read](command-reference.md#read-阅读本地邮件) 和 [search](command-reference.md#search-搜索本地邮件)。
+
+搜索会在所选归档根目录建立可丢弃的 `.search-index/` 解码缓存，保存邮件头和按需解析的正文。目录权限为 `0700`，记录为 `0600`。缓存不代替 `.eml`；可用 `search --rebuild-index <关键词>` 重建，或用 `--no-index` 完全禁用索引读写。详见[搜索索引](command-reference.md#搜索索引与性能)。

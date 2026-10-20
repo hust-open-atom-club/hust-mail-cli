@@ -23,7 +23,7 @@ type mimeReader struct {
 }
 
 func newMIMEReader(ctx context.Context, source io.Reader) (*mimeReader, error) {
-	limited := &io.LimitedReader{R: source, N: 1 << 20}
+	limited := &io.LimitedReader{R: &contextReader{ctx: ctx, r: source}, N: 1 << 20}
 	buffered := bufio.NewReader(limited)
 	header, err := textproto.ReadHeader(buffered)
 	if err != nil {
@@ -89,4 +89,16 @@ func (r *mimeReader) NextPart() (*mail.Part, error) {
 		}
 		return part, nil
 	}
+}
+
+type contextReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (r *contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.r.Read(p)
 }
