@@ -34,7 +34,9 @@ func (p popReader) status() error {
 	return nil
 }
 
-func syncPOP3(conn net.Conn, dest, host, user, password string, out io.Writer) error {
+func syncPOP3(conn net.Conn, dest, host, user, password string, out io.Writer, reporters ...*syncProgress) error {
+	progress := firstProgress(reporters)
+	progress.setPhase("authenticating")
 	if strings.ContainsAny(user+password, "\r\n") {
 		return errors.New("invalid POP3 credentials")
 	}
@@ -57,6 +59,8 @@ func syncPOP3(conn net.Conn, dest, host, user, password string, out io.Writer) e
 		return err
 	}
 	defer unlock()
+	progress.beginFolder("POP3", 1, 1)
+	progress.setPhase("listing mail")
 	if err := p.command("UIDL"); err != nil {
 		return fmt.Errorf("UIDL required for incremental sync: %w", err)
 	}
@@ -82,8 +86,10 @@ func syncPOP3(conn net.Conn, dest, host, user, password string, out io.Writer) e
 		seenUID[fields[1]], seenNum[n] = true, true
 		messages = append(messages, message{n, fields[1]})
 	}
+	progress.listed(len(messages))
 	downloaded, skipped := 0, 0
 	for _, m := range messages {
+		progress.message(strconv.Itoa(m.number))
 		hash := sha256.Sum256([]byte(m.uid))
 		path := filepath.Join(root, fmt.Sprintf("%x.eml", hash))
 		info, err := os.Lstat(path)
@@ -93,12 +99,14 @@ func syncPOP3(conn net.Conn, dest, host, user, password string, out io.Writer) e
 			}
 			if info.Size() > 0 {
 				skipped++
+				progress.finish("existing")
 				continue
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		err = atomicWrite(path, func(w io.Writer) error {
+			w = progressWriter{w, progress}
 			if err := p.command("RETR %d", m.number); err != nil {
 				return err
 			}
@@ -131,10 +139,12 @@ func syncPOP3(conn net.Conn, dest, host, user, password string, out io.Writer) e
 			return fmt.Errorf("retrieve message %d: %w", m.number, err)
 		}
 		downloaded++
+		progress.finish("downloaded")
 	}
 	if err := p.command("QUIT"); err != nil {
 		return err
 	}
+	progress.pause()
 	fmt.Fprintf(out, "Complete: downloaded=%d existing=%d archive=%s\n", downloaded, skipped, root)
 	return nil
 }
