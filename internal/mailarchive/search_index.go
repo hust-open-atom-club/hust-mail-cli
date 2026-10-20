@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 )
 
-const searchIndexVersion = 2
+const searchIndexVersion = 3
 const maxIndexRecordBytes = 64 << 20
 
 // This is a disposable cache, not an authority for which mail exists. Every

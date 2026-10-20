@@ -74,13 +74,15 @@ func readMessageHeaders(r *mimeReader) (parsedMessage, error) {
 }
 
 type messageWalkOptions struct {
-	body  bool
-	visit func(Attachment, io.Reader) (int64, error)
+	body                   bool
+	visit                  func(Attachment, io.Reader) (int64, error)
+	attachmentMetadataOnly bool
 }
 
 // Continue from the header reader so a search can filter headers and then
 // decode the body without reopening the file or parsing its headers again.
 func walkMessageParts(ctx context.Context, r *mimeReader, result parsedMessage, opts messageWalkOptions) (parsedMessage, error) {
+	r.attachmentMetadataOnly = opts.attachmentMetadataOnly
 	release := r.bufferBodyReads()
 	defer release()
 	var plain, rich []string
@@ -114,7 +116,12 @@ func walkMessageParts(ctx context.Context, r *mimeReader, result parsedMessage, 
 		_, attached := part.Header.(*mail.AttachmentHeader)
 		if attached || name != "" || (kind != "text/plain" && kind != "text/html") {
 			meta := Attachment{Index: len(result.Attachments) + 1, Filename: name, ContentType: kind}
-			if opts.visit != nil {
+			if opts.attachmentMetadataOnly {
+				// The search needs a count, not decoded attachment sizes. Scan
+				// raw MIME boundaries without running transfer/charset decoders.
+				meta.Size = -1
+				_, err = io.Copy(io.Discard, part.Body)
+			} else if opts.visit != nil {
 				meta.Size, err = opts.visit(meta, part.Body)
 			} else {
 				meta.Size, err = io.Copy(io.Discard, part.Body)

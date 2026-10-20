@@ -163,7 +163,7 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 				}
 			}
 			if err == nil {
-				parsed, err = walkMessageParts(ctx, reader, m, messageWalkOptions{body: true})
+				parsed, err = walkMessageParts(ctx, reader, m, messageWalkOptions{body: true, attachmentMetadataOnly: true})
 			}
 			if err != nil {
 				var pathErr *os.PathError

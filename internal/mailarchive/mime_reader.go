@@ -17,11 +17,12 @@ import (
 // mimeReader preserves leaf bytes after transfer decoding. mail.Reader cannot
 // be used here: it also transcodes text attachments before exposing their body.
 type mimeReader struct {
-	Header mail.Header
-	first  io.Reader
-	stack  []*textproto.MultipartReader
-	ctx    context.Context
-	source *io.LimitedReader
+	Header                 mail.Header
+	first                  io.Reader
+	stack                  []*textproto.MultipartReader
+	ctx                    context.Context
+	source                 *io.LimitedReader
+	attachmentMetadataOnly bool
 }
 
 func newMIMEReader(ctx context.Context, source io.Reader) (*mimeReader, error) {
@@ -115,6 +116,16 @@ func (r *mimeReader) NextPart() (*mail.Part, error) {
 			part.Header = &mail.InlineHeader{Header: header}
 		} else {
 			part.Header = &mail.AttachmentHeader{Header: header}
+		}
+		if r.attachmentMetadataOnly {
+			name, err := (&mail.AttachmentHeader{Header: header}).Filename()
+			if err != nil {
+				return nil, err
+			}
+			_, attached := part.Header.(*mail.AttachmentHeader)
+			if attached || name != "" || (kind != "text/plain" && kind != "text/html") {
+				return part, nil
+			}
 		}
 		// Retain go-message's transfer decoders, including MIME Base64 whitespace
 		// handling, but suppress its implicit text/* charset conversion. Original
