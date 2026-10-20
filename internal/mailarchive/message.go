@@ -13,6 +13,7 @@ import (
 	"github.com/emersion/go-message/charset"
 	"github.com/emersion/go-message/mail"
 	"golang.org/x/net/html"
+	unicodeencoding "golang.org/x/text/encoding/unicode"
 )
 
 const maxTextBytes = 8 << 20
@@ -112,12 +113,9 @@ func walkMessage(ctx context.Context, path string, body bool, visit func(Attachm
 			decoded, decodeErr := charset.Reader(encoding, textBody)
 			if decodeErr != nil {
 				// Reader resolves labels without consuming input. Invalid labels
-				// often accompany valid UTF-8/ASCII text. UTF-8 decoding retains
-				// that text and replaces invalid bytes; attachments stay raw.
-				decoded, decodeErr = charset.Reader("utf-8", textBody)
-			}
-			if decodeErr != nil {
-				return result, fmt.Errorf("decode text charset: %w", decodeErr)
+				// often accompany valid UTF-8/ASCII text. Explicitly replace
+				// invalid UTF-8 before the decoded-size limit; attachments stay raw.
+				decoded = unicodeencoding.UTF8.NewDecoder().Reader(textBody)
 			}
 			textBody = decoded
 		}

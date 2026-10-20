@@ -107,3 +107,29 @@ func TestInvalidCharsetReplacementRespectsTextLimit(t *testing.T) {
 		t.Fatalf("replacement bypassed decoded text limit: %v", err)
 	}
 }
+
+func TestInvalidCharsetReplacementBytes(t *testing.T) {
+	for _, tc := range []struct {
+		name, input, want string
+	}{
+		{"valid", "正常 UTF-8 BPF", "正常 UTF-8 BPF"},
+		{"invalid_byte", "hello \xff BPF", "hello \ufffd BPF"},
+		{"truncated_rune", "正文\xe4\xb8", "正文\ufffd"},
+		{"invalid_sequence", "a\xe4b\x80c", "a\ufffdb\ufffdc"},
+		{"buffer_boundary", strings.Repeat("x", 4095) + "中文\xff BPF", strings.Repeat("x", 4095) + "中文\ufffd BPF"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			raw := "Subject: replacement\r\nContent-Type: text/plain; charset=y\r\n\r\n" + tc.input
+			path := searchTestMail(t, dir, "replacement", raw)
+			m, err := walkMessage(context.Background(), path, true, nil)
+			if err != nil || m.Body != tc.want {
+				t.Fatalf("body=%q want=%q err=%v", m.Body, tc.want, err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil || string(got) != raw {
+				t.Fatal("source message changed", err)
+			}
+		})
+	}
+}
