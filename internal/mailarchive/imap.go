@@ -34,7 +34,9 @@ func listFolders(c *imapclient.Client) ([]string, error) {
 	return boxes, nil
 }
 
-func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time) (downloaded, skipped int, err error) {
+func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time, settings ...imapSyncOptions) (downloaded, skipped int, err error) {
+	options := firstIMAPOptions(settings)
+	progress := options.progress
 	// ReadOnly emits EXAMINE, never SELECT in read/write mode.
 	selected, err := c.Select(box, &imap.SelectOptions{ReadOnly: true}).Wait()
 	if err != nil {
@@ -56,12 +58,17 @@ func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time) (downl
 		// candidate day for timezone differences, then check INTERNALDATE exactly.
 		criteria.Since = cutoff.UTC().Add(-24 * time.Hour)
 	}
+	progress.setPhase("searching mail")
 	data, err := c.UIDSearch(criteria, nil).Wait()
 	if err != nil {
 		return 0, 0, err
 	}
 	var failures []error
-	for _, uid := range data.AllUIDs() {
+	var cached int
+	uids := data.AllUIDs()
+	progress.listed(len(uids))
+	for _, uid := range uids {
+		progress.message(strconv.FormatUint(uint64(uid), 10))
 		path := filepath.Join(dir, strconv.FormatUint(uint64(uid), 10)+".eml")
 		info, statErr := os.Lstat(path)
 		if statErr == nil {
@@ -70,27 +77,57 @@ func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time) (downl
 			}
 			if info.Size() > 0 {
 				skipped++
+				progress.finish("existing")
 				continue
 			}
 		} else if !errors.Is(statErr, os.ErrNotExist) {
 			return downloaded, skipped, statErr
 		}
-		if err = atomicWrite(path, func(w io.Writer) error { return fetchMessage(c, uid, w, cutoff) }); errors.Is(err, errOutsideRange) {
+		knownIgnored, cacheErr := wasIgnored(dir, uid)
+		if cacheErr != nil {
+			return downloaded, skipped, cacheErr
+		}
+		if knownIgnored && !options.retryIgnored {
+			if !cutoff.IsZero() {
+				_, err = resolveMessage(c, uid, cutoff)
+			}
+			if err == nil {
+				cached++
+				progress.finish("ignored")
+				continue
+			}
+		} else {
+			err = atomicWrite(path, func(w io.Writer) error { return fetchMessage(c, uid, progressWriter{w, progress}, cutoff) })
+		}
+		if errors.Is(err, errOutsideRange) {
+			progress.finish("filtered")
 			err = nil
 			continue
 		} else if err != nil {
 			var unavailable *unavailableMessageError
 			if errors.As(err, &unavailable) {
+				if unavailable.cacheable {
+					if cacheErr := rememberIgnored(dir, unavailable); cacheErr != nil {
+						return downloaded, skipped, cacheErr
+					}
+				}
 				failures = append(failures, err)
+				progress.finish("ignored")
 				err = nil
 				continue
 			}
 			return
 		}
+		if knownIgnored {
+			if err = forgetIgnored(dir, uid); err != nil {
+				return
+			}
+		}
 		downloaded++
+		progress.finish("downloaded")
 	}
-	if len(failures) > 0 {
-		err = &incompleteFolderError{failures: failures}
+	if len(failures) > 0 || cached > 0 {
+		err = &incompleteFolderError{failures: failures, cached: cached}
 	}
 	return
 }
@@ -100,42 +137,60 @@ var errOutsideRange = errors.New("message received before requested cutoff")
 // Only missing content may be deferred until the end of a sync. Transport,
 // identity and local storage errors still stop immediately.
 type unavailableMessageError struct {
-	uid    imap.UID
-	detail string
+	uid       imap.UID
+	detail    string
+	cacheable bool
+	size      int64
 }
 
 func (e *unavailableMessageError) Error() string {
 	return fmt.Sprintf("UID %d: %s", e.uid, e.detail)
 }
 
-type incompleteFolderError struct{ failures []error }
+type incompleteFolderError struct {
+	failures []error
+	cached   int
+}
 
-func (e *incompleteFolderError) Error() string   { return errors.Join(e.failures...).Error() }
+func (e *incompleteFolderError) Error() string {
+	if len(e.failures) == 0 {
+		return fmt.Sprintf("%d cached unavailable messages", e.cached)
+	}
+	return errors.Join(e.failures...).Error()
+}
 func (e *incompleteFolderError) Unwrap() []error { return e.failures }
 
-func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer, cutoff time.Time) error {
+func resolveMessage(c *imapclient.Client, uid imap.UID, cutoff time.Time) (uint32, error) {
 	// Resolve sequence without literals: the library's UID FETCH dispatcher
 	// assumes UID precedes the body. Sequence FETCH accepts either order.
 	// Verify UID before publishing in case a concurrent expunge shifts numbers.
 	resolved, err := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true, InternalDate: !cutoff.IsZero()}).Collect()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if len(resolved) == 0 {
-		return &unavailableMessageError{uid: uid, detail: "server no longer returned the searched UID; retry sync"}
+		return 0, &unavailableMessageError{uid: uid, detail: "server no longer returned the searched UID; retry sync"}
 	}
 	if len(resolved) != 1 || resolved[0].UID != uid || resolved[0].SeqNum == 0 {
-		return fmt.Errorf("cannot resolve UID %d; rerun sync", uid)
+		return 0, fmt.Errorf("cannot resolve UID %d; rerun sync", uid)
 	}
 	if !cutoff.IsZero() {
 		if resolved[0].InternalDate.IsZero() {
-			return fmt.Errorf("server omitted INTERNALDATE for UID %d; cannot apply receive-time filter", uid)
+			return 0, fmt.Errorf("server omitted INTERNALDATE for UID %d; cannot apply receive-time filter", uid)
 		}
 		if resolved[0].InternalDate.Before(cutoff) {
-			return errOutsideRange
+			return 0, errOutsideRange
 		}
 	}
-	cmd := c.Fetch(imap.SeqSetNum(resolved[0].SeqNum), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{{Peek: true}}})
+	return resolved[0].SeqNum, nil
+}
+
+func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer, cutoff time.Time) error {
+	seq, err := resolveMessage(c, uid, cutoff)
+	if err != nil {
+		return err
+	}
+	cmd := c.Fetch(imap.SeqSetNum(seq), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{{Peek: true}}})
 	defer cmd.Close()
 	count := 0
 	var gotUID imap.UID
@@ -170,7 +225,7 @@ func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer, cutoff time.T
 				return &unavailableMessageError{uid: uid, detail: "server no longer returned the UID after the body request; retry sync"}
 			}
 			if len(metadata) == 1 && metadata[0].UID == uid {
-				return &unavailableMessageError{uid: uid, detail: fmt.Sprintf("server returned no body although the message still exists (RFC822.SIZE=%d bytes); retry or check the message in webmail", metadata[0].RFC822Size)}
+				return &unavailableMessageError{uid: uid, cacheable: true, size: metadata[0].RFC822Size, detail: fmt.Sprintf("server returned no body although the message still exists (RFC822.SIZE=%d bytes); recorded for future syncs; use --retry-ignored to retry", metadata[0].RFC822Size)}
 			}
 		}
 		return fmt.Errorf("incomplete response for UID %d (mail may have been removed remotely); rerun sync", uid)

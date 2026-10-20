@@ -58,6 +58,8 @@ func newReceiveCommand(name, short string) *cobra.Command {
 	flags.IntVar(&opts.Port, "port", 0, "IMAP TLS port (default: 993)")
 	flags.DurationVar(&opts.Timeout, "timeout", 30*time.Minute, "Total connection and sync timeout; excludes password input")
 	if name == "sync" {
+		flags.BoolVar(&opts.RetryIgnored, "retry-ignored", false, "Retry IMAP messages previously recorded as unavailable")
+		flags.BoolVar(&opts.Quiet, "quiet", false, "Hide progress output (keep summaries, warnings and errors)")
 		flags.IntVar(&opts.Days, "days", 0, "Download only messages received in the last N days; IMAP only, 0 means all time")
 		flags.StringVar(&opts.Dir, "dir", config.DefaultArchiveDir, "Local archive directory")
 		flags.StringVar(&opts.Mailbox, "mailbox", "", "Sync one IMAP folder; default: all selectable folders")
@@ -115,5 +117,5 @@ func receiveOptions(cmd *cobra.Command, flags mailarchive.Options) (mailarchive.
 		return mailarchive.Options{}, err
 	}
 	return mailarchive.Options{User: cfg.User, Password: cfg.Password, Host: cfg.Host,
-		Protocol: cfg.Protocol, Port: cfg.Port, Dir: archiveDir, Mailbox: cfg.Mailbox, Timeout: timeout, Days: cfg.Days}, nil
+		Protocol: cfg.Protocol, Port: cfg.Port, Dir: archiveDir, Mailbox: cfg.Mailbox, Timeout: timeout, Days: cfg.Days, Quiet: flags.Quiet, RetryIgnored: flags.RetryIgnored}, nil
 }

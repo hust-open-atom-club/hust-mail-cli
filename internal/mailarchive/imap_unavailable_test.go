@@ -3,11 +3,13 @@ package mailarchive
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,6 +23,10 @@ func TestUnavailableMailDoesNotBlockOtherMessagesOrFolders(t *testing.T) {
 			_ = a.SetDeadline(time.Now().Add(10 * time.Second))
 			_ = b.SetDeadline(time.Now().Add(10 * time.Second))
 			done := make(chan struct{})
+			var bodyRequests atomic.Int32
+			var recovered atomic.Bool
+			var validity atomic.Uint32
+			validity.Store(42)
 			go func() {
 				defer close(done)
 				defer b.Close()
@@ -34,7 +40,7 @@ func TestUnavailableMailDoesNotBlockOtherMessagesOrFolders(t *testing.T) {
 						fmt.Fprintf(b, "* CAPABILITY IMAP4rev1\r\n%s OK done\r\n", tag)
 					case strings.HasPrefix(command, "EXAMINE "):
 						other = strings.Contains(command, "Other")
-						fmt.Fprintf(b, "* 2 EXISTS\r\n* OK [UIDVALIDITY 42] valid\r\n%s OK [READ-ONLY] done\r\n", tag)
+						fmt.Fprintf(b, "* 2 EXISTS\r\n* OK [UIDVALIDITY %d] valid\r\n%s OK [READ-ONLY] done\r\n", validity.Load(), tag)
 					case command == "UID SEARCH ALL":
 						uids := "7 8"
 						if other {
@@ -56,6 +62,12 @@ func TestUnavailableMailDoesNotBlockOtherMessagesOrFolders(t *testing.T) {
 						seq := "1"
 						uid := 9
 						if !other && strings.HasPrefix(command, "FETCH 1 ") {
+							bodyRequests.Add(1)
+							if recovered.Load() {
+								body := "Subject: recovered\r\n\r\nbody\r\n"
+								fmt.Fprintf(b, "* 1 FETCH (UID 7 BODY[] {%d}\r\n%s)\r\n%s OK done\r\n", len(body), body, tag)
+								continue
+							}
 							if mode == "uid_only" {
 								fmt.Fprint(b, "* 1 FETCH (UID 7)\r\n")
 							}
@@ -112,6 +124,52 @@ func TestUnavailableMailDoesNotBlockOtherMessagesOrFolders(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(dir, "SU5CT1g/42/7.eml")); !os.IsNotExist(err) {
 				t.Fatal("published missing body")
 			}
+			marker := ignoredPath(filepath.Join(dir, "SU5CT1g", "42"), 7)
+			if mode == "removed" {
+				if _, err := os.Stat(marker); !os.IsNotExist(err) {
+					t.Fatal("cached a disappeared UID")
+				}
+			}
+			if mode == "no_literal" {
+				info, err := os.Stat(marker)
+				if err != nil || info.Mode().Perm() != 0600 {
+					t.Fatalf("record permissions: %v", err)
+				}
+				out.Reset()
+				warnings.Reset()
+				if err := syncMailboxes(c, dir, []string{"INBOX", "Other"}, time.Time{}, &out, &warnings); err != nil {
+					t.Fatal(err)
+				}
+				if bodyRequests.Load() != 1 || warnings.Len() != 0 || !strings.Contains(out.String(), "Complete: downloaded=0 ignored=1") {
+					t.Fatalf("repeated ignored request or warning: %s %s", &out, &warnings)
+				}
+				// A reused UID in a new UIDVALIDITY must not inherit the old record.
+				validity.Store(43)
+				out.Reset()
+				warnings.Reset()
+				if err := syncMailboxes(c, dir, []string{"INBOX"}, time.Time{}, &out, &warnings); err != nil {
+					t.Fatal(err)
+				}
+				if bodyRequests.Load() != 2 || warnings.Len() == 0 {
+					t.Fatal("UIDVALIDITY change reused ignored state")
+				}
+				validity.Store(42)
+				recovered.Store(true)
+				out.Reset()
+				warnings.Reset()
+				if err := syncMailboxes(c, dir, []string{"INBOX"}, time.Time{}, &out, &warnings, imapSyncOptions{retryIgnored: true}); err != nil {
+					t.Fatal(err)
+				}
+				if bodyRequests.Load() != 3 || warnings.Len() != 0 || !strings.Contains(out.String(), "downloaded=1 existing=1") {
+					t.Fatalf("retry did not recover: %s %s", &out, &warnings)
+				}
+				if _, err := os.Stat(marker); !os.IsNotExist(err) {
+					t.Fatal("successful retry kept ignored record")
+				}
+				if _, err := os.Stat(filepath.Join(dir, "SU5CT1g", "42", "7.eml")); err != nil {
+					t.Fatal("recovered mail missing")
+				}
+			}
 			_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
 					t.Error(err)
@@ -122,6 +180,62 @@ func TestUnavailableMailDoesNotBlockOtherMessagesOrFolders(t *testing.T) {
 				}
 				return nil
 			})
+		})
+	}
+}
+
+func TestCachedIgnoredMailRespectsExactCutoff(t *testing.T) {
+	cutoff := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name         string
+		received     time.Time
+		retry        bool
+		wantFiltered int
+		wantIgnored  int
+		wantError    bool
+	}{
+		{name: "before_cutoff", received: cutoff.Add(-time.Second), wantFiltered: 1},
+		{name: "inclusive_boundary", received: cutoff, wantIgnored: 1},
+		{name: "recent_with_timezone", received: cutoff.Add(time.Hour).In(time.FixedZone("west", -12*3600)), wantIgnored: 1},
+		{name: "missing_internaldate", wantError: true},
+		{name: "retry_before_cutoff", received: cutoff.Add(-time.Second), retry: true, wantFiltered: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "SU5CT1g", "42")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := rememberIgnored(dir, &unavailableMessageError{uid: 7, size: 145300797}); err != nil {
+				t.Fatal(err)
+			}
+			c, done := testPeerUID(t, 42, false, 7, tc.received)
+			var output bytes.Buffer
+			progress := &syncProgress{out: &output, started: time.Now()}
+			downloaded, existing, err := syncFolder(c, root, "INBOX", cutoff, imapSyncOptions{progress: progress, retryIgnored: tc.retry})
+			var incomplete *incompleteFolderError
+			if tc.wantError {
+				if err == nil || !strings.Contains(err.Error(), "omitted INTERNALDATE") {
+					t.Fatalf("expected missing date error, got %v", err)
+				}
+			} else if tc.wantIgnored > 0 {
+				if !errors.As(err, &incomplete) || incomplete.cached != tc.wantIgnored || len(incomplete.failures) != 0 {
+					t.Fatalf("expected cached ignored mail, got %v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if downloaded != 0 || existing != 0 || progress.filtered != tc.wantFiltered || progress.ignored != tc.wantIgnored {
+				t.Fatalf("downloaded=%d existing=%d filtered=%d ignored=%d", downloaded, existing, progress.filtered, progress.ignored)
+			}
+			_ = c.Close()
+			if got := <-done; got != 0 {
+				t.Fatalf("unexpected body fetches: %d", got)
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 1 || entries[0].Name() != ".ignored-7.json" {
+				t.Fatalf("ignored record should be preserved without publishing mail: entries=%v err=%v", entries, err)
+			}
 		})
 	}
 }

@@ -22,6 +22,8 @@ type Options struct {
 	User, Host, Protocol, Dir, Mailbox string
 	Password                           string
 	Port                               int
+	Quiet                              bool
+	RetryIgnored                       bool
 	Days                               int
 	Timeout                            time.Duration
 }
@@ -53,6 +55,11 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 	}
 	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
+	var progress *syncProgress
+	if mode == "sync" {
+		progress = newSyncProgress(errOut, opts.Quiet)
+		defer progress.close()
+	}
 	// TLS is mandatory and certificates are always verified. No SMTP dial path exists.
 	dialer := tls.Dialer{NetDialer: &net.Dialer{Timeout: 30 * time.Second}, Config: &tls.Config{ServerName: opts.Host, MinVersion: tls.VersionTLS12}}
 	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(opts.Host, strconv.Itoa(opts.Port)))
@@ -65,10 +72,12 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 	defer stopClose()
 	c := imapclient.New(conn, nil)
 	defer c.Close()
+	progress.setPhase("authenticating")
 	if err := c.Login(opts.User, password).Wait(); err != nil {
 		return errors.New("IMAP login failed; check account, password/client authorization code and IMAP access")
 	}
 	password = ""
+	progress.setPhase("listing folders")
 	boxes, err := listFolders(c)
 	if err != nil {
 		return err
@@ -79,6 +88,7 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 			fmt.Fprintf(out, "%q\n", box)
 		}
 	} else {
+		progress.pause()
 		if !cutoff.IsZero() {
 			fmt.Fprintf(out, "Receive time cutoff: %s (last %d days)\n", cutoff.Format(time.RFC3339), opts.Days)
 		}
@@ -98,7 +108,7 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 		if err := atomicWrite(filepath.Join(root, "account.json"), func(w io.Writer) error { _, err := w.Write(meta); return err }); err != nil {
 			return err
 		}
-		syncErr = syncMailboxes(c, root, boxes, cutoff, out, errOut)
+		syncErr = syncMailboxes(c, root, boxes, cutoff, out, errOut, imapSyncOptions{progress: progress, retryIgnored: opts.RetryIgnored})
 	}
 	if err := c.Logout().Wait(); err != nil {
 		return errors.Join(syncErr, fmt.Errorf("IMAP logout: %w", err))
@@ -106,19 +116,26 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 	return syncErr
 }
 
-func syncMailboxes(c *imapclient.Client, root string, boxes []string, cutoff time.Time, out, errOut io.Writer) error {
+func syncMailboxes(c *imapclient.Client, root string, boxes []string, cutoff time.Time, out, errOut io.Writer, settings ...imapSyncOptions) error {
+	options := firstIMAPOptions(settings)
+	progress := options.progress
 	var total, ignored int
-	for _, box := range boxes {
-		n, skipped, err := syncFolder(c, root, box, cutoff)
+	for i, box := range boxes {
+		progress.beginFolder(box, i+1, len(boxes))
+		n, skipped, err := syncFolder(c, root, box, cutoff, options)
+		progress.pause()
 		total += n
 		if err != nil {
 			partial, ok := err.(*incompleteFolderError)
 			if !ok {
 				return fmt.Errorf("folder %q: %w", box, err)
 			}
-			ignored += len(partial.failures)
-			fmt.Fprintf(errOut, "warning: ignoring unavailable mail in folder %q: %v\n", box, err)
-			fmt.Fprintf(out, "%q: downloaded=%d existing=%d ignored=%d\n", box, n, skipped, len(partial.failures))
+			count := len(partial.failures) + partial.cached
+			ignored += count
+			if len(partial.failures) > 0 {
+				fmt.Fprintf(errOut, "warning: ignoring unavailable mail in folder %q: %v\n", box, err)
+			}
+			fmt.Fprintf(out, "%q: downloaded=%d existing=%d ignored=%d\n", box, n, skipped, count)
 		} else {
 			fmt.Fprintf(out, "%q: downloaded=%d existing=%d\n", box, n, skipped)
 		}
