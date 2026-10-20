@@ -111,6 +111,7 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 			progress.update(scanned, matched, skipped, cacheHits)
 		}
 		m := record.Message
+		var reader *mimeReader
 		if !cached {
 			// Cache validation may have observed a replacement or removal. Use
 			// fresh source metadata for the fallback read and any new cache.
@@ -121,7 +122,16 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 			if !info.Mode().IsRegular() {
 				return fail(errors.New("source mail is no longer a regular file"))
 			}
-			m, err = searchHeaders(ctx, path)
+			f, openErr := os.Open(path)
+			if openErr != nil {
+				return fail(openErr)
+			}
+			defer f.Close()
+			reader, err = newMIMEReader(ctx, f)
+			if err != nil {
+				return fail(err)
+			}
+			m, err = readMessageHeaders(reader)
 			if err != nil {
 				return fail(err)
 			}
@@ -139,7 +149,22 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 			if cached && record.BodyError != "" {
 				return fail(errors.New(record.BodyError))
 			}
-			parsed, err := walkMessage(ctx, path, true, nil)
+			var parsed parsedMessage
+			if reader == nil {
+				// A header-only cache hit still needs one source reader for MIME.
+				f, openErr := os.Open(path)
+				if openErr != nil {
+					return fail(openErr)
+				}
+				defer f.Close()
+				reader, err = newMIMEReader(ctx, f)
+				if err == nil {
+					m, err = readMessageHeaders(reader)
+				}
+			}
+			if err == nil {
+				parsed, err = walkMessageParts(ctx, reader, m, messageWalkOptions{body: true})
+			}
 			if err != nil {
 				var pathErr *os.PathError
 				if ctx.Err() == nil && !errors.As(err, &pathErr) {

@@ -47,6 +47,16 @@ func walkMessage(ctx context.Context, path string, body bool, visit func(Attachm
 	if err != nil {
 		return result, fmt.Errorf("decode message header: %w", err)
 	}
+	result, err = readMessageHeaders(r)
+	if err != nil {
+		return result, err
+	}
+	return walkMessageParts(ctx, r, result, messageWalkOptions{body: body, visit: visit})
+}
+
+func readMessageHeaders(r *mimeReader) (parsedMessage, error) {
+	var result parsedMessage
+	var err error
 	result.Subject, err = r.Header.Subject()
 	if err != nil {
 		return result, err
@@ -60,6 +70,19 @@ func walkMessage(ctx context.Context, path string, body bool, visit func(Attachm
 		return result, err
 	}
 	result.Date = r.Header.Get("Date")
+	return result, nil
+}
+
+type messageWalkOptions struct {
+	body  bool
+	visit func(Attachment, io.Reader) (int64, error)
+}
+
+// Continue from the header reader so a search can filter headers and then
+// decode the body without reopening the file or parsing its headers again.
+func walkMessageParts(ctx context.Context, r *mimeReader, result parsedMessage, opts messageWalkOptions) (parsedMessage, error) {
+	release := r.bufferBodyReads()
+	defer release()
 	var plain, rich []string
 	remaining := int64(maxTextBytes)
 	for {
@@ -91,8 +114,8 @@ func walkMessage(ctx context.Context, path string, body bool, visit func(Attachm
 		_, attached := part.Header.(*mail.AttachmentHeader)
 		if attached || name != "" || (kind != "text/plain" && kind != "text/html") {
 			meta := Attachment{Index: len(result.Attachments) + 1, Filename: name, ContentType: kind}
-			if visit != nil {
-				meta.Size, err = visit(meta, part.Body)
+			if opts.visit != nil {
+				meta.Size, err = opts.visit(meta, part.Body)
 			} else {
 				meta.Size, err = io.Copy(io.Discard, part.Body)
 			}
@@ -102,7 +125,7 @@ func walkMessage(ctx context.Context, path string, body bool, visit func(Attachm
 			result.Attachments = append(result.Attachments, meta)
 			continue
 		}
-		if !body {
+		if !opts.body {
 			if _, err := io.Copy(io.Discard, part.Body); err != nil {
 				return result, err
 			}
