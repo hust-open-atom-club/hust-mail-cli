@@ -15,6 +15,7 @@ type SearchOptions struct {
 	Query, Subject, From, To, Body string
 	Limit                          int
 	NoIndex, RebuildIndex          bool
+	Quiet                          bool
 }
 
 // Search writes result JSON Lines to out and optional diagnostics to errOut.
@@ -48,12 +49,17 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 	if len(errOut) > 0 && errOut[0] != nil {
 		warnings = errOut[0]
 	}
-	var scanned, matched, skipped int
+	if warnings != io.Discard {
+		warnings = &searchLog{out: warnings}
+	}
+	var scanned, matched, skipped, cacheHits int
+	progress := newSearchProgress(warnings, opts.Quiet)
 	defer func() {
-		if skipped > 0 {
-			fmt.Fprintf(warnings, "Search: scanned=%d matched=%d skipped=%d\n", scanned, matched, skipped)
+		if skipped > 0 || progress.hasOutput() {
+			fmt.Fprintf(warnings, "Search: scanned=%d matched=%d skipped=%d cache_hits=%d\n", scanned, matched, skipped, cacheHits)
 		}
 	}()
+	defer progress.close()
 	cacheWarned := false
 	index := searchIndex{root: root, dir: filepath.Join(root, ".search-index"), disabled: opts.NoIndex, rebuild: opts.RebuildIndex, warn: func(err error) {
 		if !cacheWarned {
@@ -81,11 +87,13 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 			return nil
 		}
 		scanned++
+		progress.update(scanned, matched, skipped, cacheHits)
 		fail := func(err error) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			skipped++
+			progress.update(scanned, matched, skipped, cacheHits)
 			fmt.Fprintf(warnings, "warning: skipping unreadable mail %q: %q\n", path, err.Error())
 			return nil
 		}
@@ -98,6 +106,10 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 			return err
 		}
 		record, cached := index.load(rel, info)
+		if cached {
+			cacheHits++
+			progress.update(scanned, matched, skipped, cacheHits)
+		}
 		m := record.Message
 		if !cached {
 			// Cache validation may have observed a replacement or removal. Use
@@ -155,6 +167,7 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 			return err
 		}
 		matched++
+		progress.update(scanned, matched, skipped, cacheHits)
 		if opts.Limit > 0 && matched >= opts.Limit {
 			return filepath.SkipAll
 		}

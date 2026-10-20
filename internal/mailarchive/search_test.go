@@ -27,7 +27,7 @@ func TestSearchContinuesAfterBadMail(t *testing.T) {
 	messages := []string{
 		"not a valid header\r\n\r\n",
 		"Subject: broken MIME\r\nContent-Type: multipart/mixed\r\n\r\n",
-		"Subject: unknown charset\r\nContent-Type: text/plain; charset=x-no-such-charset\r\n\r\nneedle",
+		"Subject: broken transfer\r\nContent-Type: text/plain\r\nContent-Transfer-Encoding: base64\r\n\r\n!!!!",
 		"Subject: oversized\r\nContent-Type: text/plain\r\n\r\n" + strings.Repeat("x", maxTextBytes+1),
 		"Subject: good\r\n\r\nneedle",
 	}
@@ -232,6 +232,7 @@ func BenchmarkSearchArchive(b *testing.B) {
 		opts SearchOptions
 	}{
 		{"body_without_index", SearchOptions{Body: "needle", NoIndex: true}},
+		{"body_rebuild_index", SearchOptions{Body: "needle", RebuildIndex: true}},
 		{"body_warm_index", SearchOptions{Body: "needle"}},
 		{"headers_without_index", SearchOptions{Subject: "staff", NoIndex: true}},
 	} {
