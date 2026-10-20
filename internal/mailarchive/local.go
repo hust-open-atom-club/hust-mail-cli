@@ -27,6 +27,7 @@ func Read(path string, out io.Writer) error {
 func List(dir string, out io.Writer) error {
 	decoder := mime.WordDecoder{CharsetReader: charset.Reader}
 	enc := json.NewEncoder(out)
+	enc.SetEscapeHTML(false)
 	return filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err
