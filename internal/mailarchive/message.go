@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -201,4 +202,23 @@ func Show(ctx context.Context, path string, out io.Writer) error {
 	}
 	_, err = io.WriteString(out, terminalText(text.String()))
 	return err
+}
+
+// ShowJSON emits decoded message text and attachment metadata without modifying it.
+func ShowJSON(ctx context.Context, path string, out io.Writer) error {
+	m, err := walkMessage(ctx, path, true, nil)
+	if err != nil {
+		return err
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if m.Attachments == nil {
+		m.Attachments = []Attachment{}
+	}
+	return writeJSON(out, map[string]any{
+		"path": abs, "subject": m.Subject, "from": m.From, "to": m.To,
+		"date": m.Date, "body": m.Body, "attachments": m.Attachments,
+	})
 }

@@ -22,6 +22,7 @@ func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
+	cmd.PersistentFlags().Bool("json", false, "Output command results as JSON Lines")
 	cmd.PersistentFlags().String("config", "", "Config file (default: ~/.config/hust-mail-cli/config.json)")
 	cmd.AddCommand(newReceiveCommand("sync", "Download missing messages into a local archive"))
 	cmd.AddCommand(newReceiveCommand("folders", "List selectable IMAP folders"))
@@ -117,5 +118,10 @@ func receiveOptions(cmd *cobra.Command, flags mailarchive.Options) (mailarchive.
 		return mailarchive.Options{}, err
 	}
 	return mailarchive.Options{User: cfg.User, Password: cfg.Password, Host: cfg.Host,
-		Protocol: cfg.Protocol, Port: cfg.Port, Dir: archiveDir, Mailbox: cfg.Mailbox, Timeout: timeout, Days: cfg.Days, Quiet: flags.Quiet, RetryIgnored: flags.RetryIgnored}, nil
+		Protocol: cfg.Protocol, Port: cfg.Port, Dir: archiveDir, Mailbox: cfg.Mailbox, Timeout: timeout, Days: cfg.Days, JSON: jsonOutput(cmd), Quiet: flags.Quiet, RetryIgnored: flags.RetryIgnored}, nil
+}
+
+func jsonOutput(cmd *cobra.Command) bool {
+	value, _ := cmd.Root().PersistentFlags().GetBool("json")
+	return value
 }

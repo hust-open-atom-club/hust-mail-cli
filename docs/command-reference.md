@@ -16,6 +16,17 @@
 
 `--config /path/to/config.json` 指定配置文件，默认路径为 `~/.config/hust-mail-cli/config.json`。需要配置的命令遵循显式参数、支持的环境变量、配置文件、内置默认值的优先级。帮助、补全、`read` 和附件命令不读取账号配置；`list`、`search` 从配置解析归档目录，但不连接邮箱。
 
+`--json` 是全局选项，可放在命令前后，包括 `attachments` 的子命令。业务命令的结果输出为 JSON Lines（每行一个 JSON 对象），方便管道处理；进度、警告和错误写入标准错误。帮助与 shell 补全仍输出原有文本/脚本。失败时退出码非零；没有结果的列表可以没有输出。
+
+```sh
+hust-mail-cli --json sync --quiet
+hust-mail-cli folders --json
+hust-mail-cli read /path/to/message.eml --json
+hust-mail-cli attachments list /path/to/message.eml --json
+```
+
+`list`、`search`、`attachments list/export` 原本就输出 JSON Lines，加上 `--json` 后字段与格式保持一致。`read --json` 输出 `path`、`subject`、`from`、`to`、`date`、`body` 和附件元数据数组 `attachments`；无附件时为 `[]`。`read --raw` 与 `--json` 不可同时使用。
+
 只读收信的连接选项、密码输入方式和权限要求见[配置指南](configuration.md)。SMTP 暂未实现；没有发送、回复、转发、删除或 doctor 子命令。
 
 ## sync 同步邮件
@@ -50,7 +61,22 @@ hust-mail-cli sync --days 0
 
 ### 增量与只读保证
 
-使用 `EXAMINE` 和 `BODY.PEEK[]`，不标记已读，不修改、删除或上传远端邮件。重复运行只下载缺失或零字节文件；归档标识与 UIDVALIDITY 行为见[本地归档](archive.md)。每个文件夹输出 `downloaded` 和 `existing` 计数，最后输出本次下载总数和归档位置。
+使用 `EXAMINE` 和 `BODY.PEEK[]`，不标记已读，不修改、删除或上传远端邮件。重复运行只下载缺失或零字节文件；归档标识与 UIDVALIDITY 行为见[本地归档](archive.md)。每个文件夹输出一行，按列对齐文件夹名称及 `DOWNLOADED`、`EXISTING`、`IGNORED` 计数（包括零值），最后输出下载总数和归档位置，例如：
+
+```text
+FOLDER        DOWNLOADED    EXISTING     IGNORED
+"INBOX"                0       13663           8
+"Sent Items"           0         388           5
+```
+
+`sync --json` 按文件夹逐行输出 `type: "folder"` 记录，最后输出 `type: "complete"` 的总计记录：
+
+```json
+{"type":"folder","folder":"INBOX","downloaded":0,"existing":13663,"ignored":8}
+{"type":"complete","downloaded":0,"existing":13663,"ignored":8,"archive":"/path/to/archive"}
+```
+
+总计包含本次所有文件夹的计数；有时间筛选时还带 `cutoff`（RFC3339 格式）。中途失败时可能已输出部分文件夹结果，不会输出最终总计记录；请同时检查退出码。JSON 模式下，时间范围提示写入标准错误。
 
 中断后可直接重跑；SSH 后台运行和残留锁处理见[同步恢复](troubleshooting.md)。
 
@@ -95,7 +121,7 @@ hust-mail-cli folders --user 你的邮箱@hust.edu.cn
 hust-mail-cli folders --config /path/to/config.json
 ```
 
-输出每行一个带引号的文件夹名称，例如 `"INBOX"`。将实际名称传给同步命令：
+输出每行一个带引号的文件夹名称，例如 `"INBOX"`。`folders --json` 则输出 `{"folder":"INBOX"}` 形式的 JSON Lines。将实际名称传给同步命令：
 
 ```sh
 hust-mail-cli sync --mailbox INBOX
