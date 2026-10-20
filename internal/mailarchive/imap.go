@@ -88,11 +88,18 @@ func syncFolder(c *imapclient.Client, root, box string, cutoff time.Time, settin
 			return downloaded, skipped, cacheErr
 		}
 		if knownIgnored && !options.retryIgnored {
-			cached++
-			progress.finish("ignored")
-			continue
+			if !cutoff.IsZero() {
+				_, err = resolveMessage(c, uid, cutoff)
+			}
+			if err == nil {
+				cached++
+				progress.finish("ignored")
+				continue
+			}
+		} else {
+			err = atomicWrite(path, func(w io.Writer) error { return fetchMessage(c, uid, progressWriter{w, progress}, cutoff) })
 		}
-		if err = atomicWrite(path, func(w io.Writer) error { return fetchMessage(c, uid, progressWriter{w, progress}, cutoff) }); errors.Is(err, errOutsideRange) {
+		if errors.Is(err, errOutsideRange) {
 			progress.finish("filtered")
 			err = nil
 			continue
@@ -153,29 +160,37 @@ func (e *incompleteFolderError) Error() string {
 }
 func (e *incompleteFolderError) Unwrap() []error { return e.failures }
 
-func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer, cutoff time.Time) error {
+func resolveMessage(c *imapclient.Client, uid imap.UID, cutoff time.Time) (uint32, error) {
 	// Resolve sequence without literals: the library's UID FETCH dispatcher
 	// assumes UID precedes the body. Sequence FETCH accepts either order.
 	// Verify UID before publishing in case a concurrent expunge shifts numbers.
 	resolved, err := c.Fetch(imap.UIDSetNum(uid), &imap.FetchOptions{UID: true, InternalDate: !cutoff.IsZero()}).Collect()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if len(resolved) == 0 {
-		return &unavailableMessageError{uid: uid, detail: "server no longer returned the searched UID; retry sync"}
+		return 0, &unavailableMessageError{uid: uid, detail: "server no longer returned the searched UID; retry sync"}
 	}
 	if len(resolved) != 1 || resolved[0].UID != uid || resolved[0].SeqNum == 0 {
-		return fmt.Errorf("cannot resolve UID %d; rerun sync", uid)
+		return 0, fmt.Errorf("cannot resolve UID %d; rerun sync", uid)
 	}
 	if !cutoff.IsZero() {
 		if resolved[0].InternalDate.IsZero() {
-			return fmt.Errorf("server omitted INTERNALDATE for UID %d; cannot apply receive-time filter", uid)
+			return 0, fmt.Errorf("server omitted INTERNALDATE for UID %d; cannot apply receive-time filter", uid)
 		}
 		if resolved[0].InternalDate.Before(cutoff) {
-			return errOutsideRange
+			return 0, errOutsideRange
 		}
 	}
-	cmd := c.Fetch(imap.SeqSetNum(resolved[0].SeqNum), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{{Peek: true}}})
+	return resolved[0].SeqNum, nil
+}
+
+func fetchMessage(c *imapclient.Client, uid imap.UID, w io.Writer, cutoff time.Time) error {
+	seq, err := resolveMessage(c, uid, cutoff)
+	if err != nil {
+		return err
+	}
+	cmd := c.Fetch(imap.SeqSetNum(seq), &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{{Peek: true}}})
 	defer cmd.Close()
 	count := 0
 	var gotUID imap.UID

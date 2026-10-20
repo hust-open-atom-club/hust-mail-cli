@@ -3,6 +3,7 @@ package mailarchive
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -179,6 +180,62 @@ func TestUnavailableMailDoesNotBlockOtherMessagesOrFolders(t *testing.T) {
 				}
 				return nil
 			})
+		})
+	}
+}
+
+func TestCachedIgnoredMailRespectsExactCutoff(t *testing.T) {
+	cutoff := time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name         string
+		received     time.Time
+		retry        bool
+		wantFiltered int
+		wantIgnored  int
+		wantError    bool
+	}{
+		{name: "before_cutoff", received: cutoff.Add(-time.Second), wantFiltered: 1},
+		{name: "inclusive_boundary", received: cutoff, wantIgnored: 1},
+		{name: "recent_with_timezone", received: cutoff.Add(time.Hour).In(time.FixedZone("west", -12*3600)), wantIgnored: 1},
+		{name: "missing_internaldate", wantError: true},
+		{name: "retry_before_cutoff", received: cutoff.Add(-time.Second), retry: true, wantFiltered: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "SU5CT1g", "42")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := rememberIgnored(dir, &unavailableMessageError{uid: 7, size: 145300797}); err != nil {
+				t.Fatal(err)
+			}
+			c, done := testPeerUID(t, 42, false, 7, tc.received)
+			var output bytes.Buffer
+			progress := &syncProgress{out: &output, started: time.Now()}
+			downloaded, existing, err := syncFolder(c, root, "INBOX", cutoff, imapSyncOptions{progress: progress, retryIgnored: tc.retry})
+			var incomplete *incompleteFolderError
+			if tc.wantError {
+				if err == nil || !strings.Contains(err.Error(), "omitted INTERNALDATE") {
+					t.Fatalf("expected missing date error, got %v", err)
+				}
+			} else if tc.wantIgnored > 0 {
+				if !errors.As(err, &incomplete) || incomplete.cached != tc.wantIgnored || len(incomplete.failures) != 0 {
+					t.Fatalf("expected cached ignored mail, got %v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if downloaded != 0 || existing != 0 || progress.filtered != tc.wantFiltered || progress.ignored != tc.wantIgnored {
+				t.Fatalf("downloaded=%d existing=%d filtered=%d ignored=%d", downloaded, existing, progress.filtered, progress.ignored)
+			}
+			_ = c.Close()
+			if got := <-done; got != 0 {
+				t.Fatalf("unexpected body fetches: %d", got)
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil || len(entries) != 1 || entries[0].Name() != ".ignored-7.json" {
+				t.Fatalf("ignored record should be preserved without publishing mail: entries=%v err=%v", entries, err)
+			}
 		})
 	}
 }
