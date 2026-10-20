@@ -1,6 +1,7 @@
 package root
 
 import (
+	"errors"
 	"github.com/hust-open-atom-club/hust-mail-cli/internal/config"
 	"github.com/hust-open-atom-club/hust-mail-cli/internal/mailarchive"
 	"github.com/spf13/cobra"
@@ -20,6 +21,12 @@ func localArchiveDir(cmd *cobra.Command, dir string) (string, error) {
 func newReadCommand() *cobra.Command {
 	var raw bool
 	cmd := &cobra.Command{Use: "read <file.eml>", Short: "Display decoded text of a local message", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if raw && jsonOutput(cmd) {
+			return errors.New("--raw and --json cannot be used together")
+		}
+		if jsonOutput(cmd) {
+			return mailarchive.ShowJSON(cmd.Context(), args[0], cmd.OutOrStdout())
+		}
 		if raw {
 			return mailarchive.Read(args[0], cmd.OutOrStdout())
 		}

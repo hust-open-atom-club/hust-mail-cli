@@ -160,7 +160,7 @@ func TestUnavailableMailDoesNotBlockOtherMessagesOrFolders(t *testing.T) {
 				if err := syncMailboxes(c, dir, []string{"INBOX"}, time.Time{}, &out, &warnings, imapSyncOptions{retryIgnored: true}); err != nil {
 					t.Fatal(err)
 				}
-				if bodyRequests.Load() != 3 || warnings.Len() != 0 || !strings.Contains(out.String(), "downloaded=1 existing=1") {
+				if bodyRequests.Load() != 3 || warnings.Len() != 0 || !strings.Contains(strings.Join(strings.Fields(out.String()), " "), `"INBOX" 1 1 0`) {
 					t.Fatalf("retry did not recover: %s %s", &out, &warnings)
 				}
 				if _, err := os.Stat(marker); !os.IsNotExist(err) {

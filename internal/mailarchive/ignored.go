@@ -75,6 +75,7 @@ func forgetIgnored(dir string, uid imap.UID) error {
 }
 
 type imapSyncOptions struct {
+	json         bool
 	progress     *syncProgress
 	retryIgnored bool
 }

@@ -22,6 +22,7 @@ type Options struct {
 	User, Host, Protocol, Dir, Mailbox string
 	Password                           string
 	Port                               int
+	JSON                               bool
 	Quiet                              bool
 	RetryIgnored                       bool
 	Days                               int
@@ -84,13 +85,15 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 	}
 	var syncErr error
 	if mode == "folders" {
-		for _, box := range boxes {
-			fmt.Fprintf(out, "%q\n", box)
-		}
+		syncErr = writeFolders(out, boxes, opts.JSON)
 	} else {
 		progress.pause()
 		if !cutoff.IsZero() {
-			fmt.Fprintf(out, "Receive time cutoff: %s (last %d days)\n", cutoff.Format(time.RFC3339), opts.Days)
+			cutoffOut := out
+			if opts.JSON {
+				cutoffOut = errOut
+			}
+			fmt.Fprintf(cutoffOut, "Receive time cutoff: %s (last %d days)\n", cutoff.Format(time.RFC3339), opts.Days)
 		}
 		if opts.Mailbox != "" {
 			boxes = []string{opts.Mailbox}
@@ -108,7 +111,7 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 		if err := atomicWrite(filepath.Join(root, "account.json"), func(w io.Writer) error { _, err := w.Write(meta); return err }); err != nil {
 			return err
 		}
-		syncErr = syncMailboxes(c, root, boxes, cutoff, out, errOut, imapSyncOptions{progress: progress, retryIgnored: opts.RetryIgnored})
+		syncErr = syncMailboxes(c, root, boxes, cutoff, out, errOut, imapSyncOptions{progress: progress, retryIgnored: opts.RetryIgnored, json: opts.JSON})
 	}
 	if err := c.Logout().Wait(); err != nil {
 		return errors.Join(syncErr, fmt.Errorf("IMAP logout: %w", err))
@@ -119,33 +122,35 @@ func Receive(ctx context.Context, mode string, opts Options, out, errOut io.Writ
 func syncMailboxes(c *imapclient.Client, root string, boxes []string, cutoff time.Time, out, errOut io.Writer, settings ...imapSyncOptions) error {
 	options := firstIMAPOptions(settings)
 	progress := options.progress
-	var total, ignored int
+	reporter := syncOutput{out: out, json: options.json}
+	progress.pause()
+	if err := reporter.header(boxes); err != nil {
+		return err
+	}
+	var total, existing, ignored int
 	for i, box := range boxes {
 		progress.beginFolder(box, i+1, len(boxes))
 		n, skipped, err := syncFolder(c, root, box, cutoff, options)
 		progress.pause()
-		total += n
+		count := 0
 		if err != nil {
 			partial, ok := err.(*incompleteFolderError)
 			if !ok {
 				return fmt.Errorf("folder %q: %w", box, err)
 			}
-			count := len(partial.failures) + partial.cached
-			ignored += count
+			count = len(partial.failures) + partial.cached
 			if len(partial.failures) > 0 {
 				fmt.Fprintf(errOut, "warning: ignoring unavailable mail in folder %q: %v\n", box, err)
 			}
-			fmt.Fprintf(out, "%q: downloaded=%d existing=%d ignored=%d\n", box, n, skipped, count)
-		} else {
-			fmt.Fprintf(out, "%q: downloaded=%d existing=%d\n", box, n, skipped)
+		}
+		total += n
+		existing += skipped
+		ignored += count
+		if err := reporter.folder(box, n, skipped, count); err != nil {
+			return err
 		}
 	}
-	if ignored > 0 {
-		fmt.Fprintf(out, "Complete: downloaded=%d ignored=%d archive=%s\n", total, ignored, root)
-	} else {
-		fmt.Fprintf(out, "Complete: downloaded=%d archive=%s\n", total, root)
-	}
-	return nil
+	return reporter.complete(root, total, existing, ignored, cutoff)
 }
 
 func validateOptions(mode string, opts *Options) error {
