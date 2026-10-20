@@ -18,11 +18,11 @@ func TestLoadDefaultsAndConfig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{"user":"test@hust.edu.cn","password":"dedicated","port":995,"protocol":"pop3"}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"user":"test@hust.edu.cn","password":"dedicated","port":1993,"protocol":"imap"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err = Load("")
-	if err != nil || cfg.Password != "dedicated" || cfg.User != "test@hust.edu.cn" || cfg.Port != 995 || cfg.Protocol != "pop3" {
+	if err != nil || cfg.Password != "dedicated" || cfg.User != "test@hust.edu.cn" || cfg.Port != 1993 || cfg.Protocol != "imap" {
 		t.Fatal("config not loaded")
 	}
 	if _, err := Load(filepath.Join(home, "missing.json")); err == nil {

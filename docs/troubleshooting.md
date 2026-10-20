@@ -30,9 +30,9 @@ nohup hust-mail-cli sync > ~/hust-mail-sync.log 2>&1 < /dev/null &
 
 需要全量同步时使用 `hust-mail-cli sync --days 0`。重跑会跳过已保存的邮件并重试缺失项；如果相同 UID 持续失败，请在网页端检查该邮件是否能完整打开或下载，必要时向邮箱服务支持反馈 UID 和大小。服务器暂不提供正文时，该邮件不会归档；`ignored` 表示本次跳过数量，不代表这些邮件已备份。
 
-## POP3 时间范围报错
+## 旧配置中的 POP3
 
-POP3 不提供可靠的服务器收信时间，不能使用非零 `days`。请切换为 IMAP，或使用 `--protocol pop3 --host pop.hust.edu.cn --port 995 --days 0`。
+CLI 不再支持 POP3。若旧配置设置了 `protocol: "pop3"`，请改为 `protocol: "imap"`、`host: "imap.hust.edu.cn"`、`port: 993`，并确认专用密码已启用 IMAP 权限。`--protocol pop3` 同样会报错，不会连接服务器。已有本地 `.eml` 归档仍可读取和搜索，不会被删除；切换为 IMAP 后使用独立账号归档，可能重新下载相同邮件。
 
 ## 正文无法解码或超过限制
 

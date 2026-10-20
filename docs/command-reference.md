@@ -54,14 +54,6 @@ hust-mail-cli sync --days 0
 
 服务器不返回个别邮件正文时，继续同步其余邮件和文件夹，将其作为警告跳过，最后显示 `ignored` 数量并正常退出。警告包含文件夹及 UID；不会保存缺失正文的邮件，`ignored` 不计入下载数量。详情见[故障排查](troubleshooting.md#邮件仍存在但服务器不返回正文)。
 
-### POP3 兼容收信
-
-```sh
-hust-mail-cli sync --protocol pop3 --host pop.hust.edu.cn --port 995 --days 0
-```
-
-POP3 不支持文件夹选择和服务器收信时间筛选；配置中的 `mailbox` 必须为空。它与 IMAP 使用独立归档目录，不发送 `DELE`。下载范围和保留策略取决于服务端设置。
-
 ## folders 列出文件夹
 
 只读连接 IMAP 邮箱，列出可选择的文件夹，便于确定 `sync --mailbox` 的名称。
