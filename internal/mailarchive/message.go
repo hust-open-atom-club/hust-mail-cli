@@ -109,10 +109,17 @@ func walkMessage(ctx context.Context, path string, body bool, visit func(Attachm
 		}
 		textBody := part.Body
 		if encoding := params["charset"]; encoding != "" {
-			textBody, err = charset.Reader(encoding, textBody)
-			if err != nil {
-				return result, fmt.Errorf("decode text charset: %w", err)
+			decoded, decodeErr := charset.Reader(encoding, textBody)
+			if decodeErr != nil {
+				// Reader resolves labels without consuming input. Invalid labels
+				// often accompany valid UTF-8/ASCII text. UTF-8 decoding retains
+				// that text and replaces invalid bytes; attachments stay raw.
+				decoded, decodeErr = charset.Reader("utf-8", textBody)
 			}
+			if decodeErr != nil {
+				return result, fmt.Errorf("decode text charset: %w", decodeErr)
+			}
+			textBody = decoded
 		}
 		data, err := io.ReadAll(io.LimitReader(textBody, remaining+1))
 		if err != nil {

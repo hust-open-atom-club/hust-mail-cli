@@ -56,6 +56,23 @@ func (r *mimeReader) NextPart() (*mail.Part, error) {
 		} else {
 			return nil, io.EOF
 		}
+		// Some senders omit the media type but still supply parameters. Keep
+		// named/binary parts as attachments instead of treating their bytes as
+		// display text; otherwise RFC 2045's text/plain default applies.
+		value := strings.TrimSpace(header.Get("Content-Type"))
+		if value == "" {
+			header.SetContentType("text/plain", nil)
+		} else if strings.HasPrefix(value, ";") {
+			header.Set("Content-Type", "text/plain"+value)
+			_, parameters, parseErr := header.ContentType()
+			if parseErr != nil {
+				return nil, parseErr
+			}
+			disposition, dispositionParams, _ := header.ContentDisposition()
+			if parameters["name"] != "" || dispositionParams["filename"] != "" || disposition == "attachment" {
+				header.Set("Content-Type", "application/octet-stream"+value)
+			}
+		}
 		kind, params, err := header.ContentType()
 		if err != nil {
 			return nil, err
