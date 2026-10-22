@@ -221,7 +221,7 @@ hust-mail-cli search --sort newest --limit 20
 
 ### 搜索索引与性能
 
-持续超过 5 秒的搜索，每 5 秒向 stderr 输出 `Search progress: scanned=... matched=... skipped=... cache_hits=... elapsed=...`，结束时输出最终统计。建索引、解析大邮件或等待输出时仍可看到计数及已用时间；不预先遍历整份归档计算百分比。可用 `--quiet` 关闭进度；stdout 始终只包含 JSON Lines 结果。
+持续超过 5 秒的搜索，每 5 秒向 stderr 输出 `Search progress: scanned=... matched=... skipped=... cache_hits=... elapsed=...`，结束时输出最终统计。`matched` 为已扫描邮件中的全部匹配数；日期排序配合 `--limit` 时，它可以大于最终输出条数。建索引、解析大邮件或等待输出时仍可看到计数及已用时间；不预先遍历整份归档计算百分比。可用 `--quiet` 关闭进度；stdout 始终只包含 JSON Lines 结果。
 
 默认在本次 `--dir` 对应的归档根目录下维护 `.search-index/`。它是可丢弃的解码缓存，不是独立邮件库，也不是倒排全文索引：每次仍遍历原始 `.eml`，按相对路径、大小和纳秒修改时间验证缓存；新增或变化的邮件按需解析，已删除的邮件不会从缓存返回。
 

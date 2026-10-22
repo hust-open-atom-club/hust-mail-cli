@@ -228,7 +228,7 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 		}
 		if order.sorted() {
 			order.add(searchHit{row: result, date: date, validDate: dateErr == nil, path: path})
-			matched = len(order.hits)
+			matched++
 			progress.update(scanned, matched, skipped, cacheHits)
 			return nil
 		}

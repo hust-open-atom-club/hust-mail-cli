@@ -118,3 +118,35 @@ func TestSearchDateLimitRetainsOnlyBestHeaders(t *testing.T) {
 		}
 	}
 }
+
+func TestSortedSearchLimitCountsAllMatches(t *testing.T) {
+	dir := t.TempDir()
+	for _, tc := range []struct{ name, date string }{
+		{"a-old", "Tue, 20 Oct 2026 09:00:00 +0000"},
+		{"b-middle", "Wed, 21 Oct 2026 09:00:00 +0000"},
+		{"c-new", "Thu, 22 Oct 2026 09:00:00 +0000"},
+	} {
+		searchTestMail(t, dir, tc.name, "Subject: matches\r\nDate: "+tc.date+"\r\n\r\nneedle")
+	}
+	// A skipped message triggers final statistics without a slow timer test.
+	searchTestMail(t, dir, "d-bad", "invalid header\r\n\r\n")
+	for _, mode := range []string{"newest", "oldest"} {
+		for _, noIndex := range []bool{true, false, false} {
+			var out, warnings bytes.Buffer
+			err := Search(context.Background(), dir, SearchOptions{Body: "needle", Sort: mode, Limit: 1, NoIndex: noIndex}, &out, &warnings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "c-new"
+			if mode == "oldest" {
+				want = "a-old"
+			}
+			if got := resultNames(t, out.Bytes()); !reflect.DeepEqual(got, []string{want}) {
+				t.Fatalf("limited output=%v want=%s", got, want)
+			}
+			if !strings.Contains(warnings.String(), "Search: scanned=4 matched=3 skipped=1") {
+				t.Fatalf("limited heap suppressed total matches: %s", &warnings)
+			}
+		}
+	}
+}
