@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 )
 
-const searchIndexVersion = 2
+const searchIndexVersion = 3
 const maxIndexRecordBytes = 64 << 20
 
 // This is a disposable cache, not an authority for which mail exists. Every
@@ -94,35 +94,6 @@ func (s *searchIndex) save(rel string, info os.FileInfo, message parsedMessage, 
 		s.warn(err)
 		s.disabled = true
 	}
-}
-
-// Only the RFC 5322 headers are consumed. A broken/large MIME body or attachment
-// must not prevent a header match or make a header-only query scan the message.
-func searchHeaders(ctx context.Context, path string) (parsedMessage, error) {
-	var result parsedMessage
-	if err := ctx.Err(); err != nil {
-		return result, err
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return result, err
-	}
-	defer f.Close()
-	r, err := newMIMEReader(ctx, f)
-	if err != nil {
-		return result, err
-	}
-	result.Subject, err = r.Header.Subject()
-	if err != nil {
-		return result, err
-	}
-	result.From, err = r.Header.Text("From")
-	if err != nil {
-		return result, err
-	}
-	result.To, err = r.Header.Text("To")
-	result.Date = r.Header.Get("Date")
-	return result, err
 }
 
 func (s *searchIndex) prepare(ctx context.Context) {

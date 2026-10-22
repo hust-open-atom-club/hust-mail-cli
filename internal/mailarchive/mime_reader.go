@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"strings"
+	"sync"
 
 	"github.com/emersion/go-message"
 	"github.com/emersion/go-message/mail"
@@ -16,10 +17,12 @@ import (
 // mimeReader preserves leaf bytes after transfer decoding. mail.Reader cannot
 // be used here: it also transcodes text attachments before exposing their body.
 type mimeReader struct {
-	Header mail.Header
-	first  io.Reader
-	stack  []*textproto.MultipartReader
-	ctx    context.Context
+	Header                 mail.Header
+	first                  io.Reader
+	stack                  []*textproto.MultipartReader
+	ctx                    context.Context
+	source                 *io.LimitedReader
+	attachmentMetadataOnly bool
 }
 
 func newMIMEReader(ctx context.Context, source io.Reader) (*mimeReader, error) {
@@ -30,7 +33,26 @@ func newMIMEReader(ctx context.Context, source io.Reader) (*mimeReader, error) {
 		return nil, err
 	}
 	limited.N = math.MaxInt64
-	return &mimeReader{Header: mail.Header{Header: message.Header{Header: header}}, first: buffered, ctx: ctx}, nil
+	return &mimeReader{Header: mail.Header{Header: message.Header{Header: header}}, first: buffered, ctx: ctx, source: limited}, nil
+}
+
+// Multipart/base64 readers request small chunks. Buffer the underlying file
+// only once body traversal starts; header-only searches keep their small reads.
+// Reuse buffers between messages without retaining their file readers.
+var mimeBodyBuffers = sync.Pool{New: func() any {
+	return bufio.NewReaderSize(nil, 64<<10)
+}}
+
+func (r *mimeReader) bufferBodyReads() func() {
+	source := r.source.R
+	buffered := mimeBodyBuffers.Get().(*bufio.Reader)
+	buffered.Reset(source)
+	r.source.R = buffered
+	return func() {
+		r.source.R = source
+		buffered.Reset(nil)
+		mimeBodyBuffers.Put(buffered)
+	}
 }
 
 func (r *mimeReader) NextPart() (*mail.Part, error) {
@@ -88,6 +110,23 @@ func (r *mimeReader) NextPart() (*mail.Part, error) {
 			r.stack = append(r.stack, textproto.NewMultipartReader(body, params["boundary"]))
 			continue
 		}
+		part := &mail.Part{Body: body}
+		disposition, _, _ := header.ContentDisposition()
+		if disposition == "inline" || (disposition != "attachment" && strings.HasPrefix(kind, "text/")) {
+			part.Header = &mail.InlineHeader{Header: header}
+		} else {
+			part.Header = &mail.AttachmentHeader{Header: header}
+		}
+		if r.attachmentMetadataOnly {
+			name, err := (&mail.AttachmentHeader{Header: header}).Filename()
+			if err != nil {
+				return nil, err
+			}
+			_, attached := part.Header.(*mail.AttachmentHeader)
+			if attached || name != "" || (kind != "text/plain" && kind != "text/html") {
+				return part, nil
+			}
+		}
 		// Retain go-message's transfer decoders, including MIME Base64 whitespace
 		// handling, but suppress its implicit text/* charset conversion. Original
 		// headers remain available for filenames and explicit body conversion.
@@ -97,13 +136,7 @@ func (r *mimeReader) NextPart() (*mail.Part, error) {
 		if err != nil {
 			return nil, err
 		}
-		part := &mail.Part{Body: entity.Body}
-		disposition, _, _ := header.ContentDisposition()
-		if disposition == "inline" || (disposition != "attachment" && strings.HasPrefix(kind, "text/")) {
-			part.Header = &mail.InlineHeader{Header: header}
-		} else {
-			part.Header = &mail.AttachmentHeader{Header: header}
-		}
+		part.Body = entity.Body
 		return part, nil
 	}
 }
