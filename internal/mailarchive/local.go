@@ -1,7 +1,6 @@
 package mailarchive
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -83,7 +82,7 @@ func ListContext(ctx context.Context, dir string, out, warnings io.Writer) error
 		if err != nil {
 			return fail(path, err)
 		}
-		msg, err := mail.ReadMessage(bufio.NewReader(io.LimitReader(&contextReader{ctx: ctx, r: f}, 1<<20)))
+		msg, err := mail.ReadMessage(&listHeaderReader{source: &contextReader{ctx: ctx, r: f}, remaining: 1 << 20})
 		f.Close()
 		if err != nil {
 			return fail(path, err)
@@ -105,4 +104,38 @@ func ListContext(ctx context.Context, dir string, out, warnings io.Writer) error
 		listed++
 		return nil
 	})
+}
+
+var errListHeaderTooLarge = errors.New("message headers exceed 1 MiB limit")
+
+// net/mail accepts EOF after header fields. Unlike io.LimitReader, this reader
+// distinguishes actual EOF from exhausting the header budget. The one-byte
+// probe also allows a header ending exactly at the limit without a separator.
+type listHeaderReader struct {
+	source    io.Reader
+	remaining int64
+}
+
+func (r *listHeaderReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if r.remaining < 0 {
+		return 0, errListHeaderTooLarge
+	}
+	if r.remaining == 0 {
+		var probe [1]byte
+		n, err := r.source.Read(probe[:])
+		if n > 0 {
+			r.remaining = -1
+			return 0, errListHeaderTooLarge
+		}
+		return 0, err
+	}
+	if int64(len(p)) > r.remaining {
+		p = p[:int(r.remaining)]
+	}
+	n, err := r.source.Read(p)
+	r.remaining -= int64(n)
+	return n, err
 }

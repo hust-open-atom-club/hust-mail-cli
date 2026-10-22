@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -18,6 +19,10 @@ var errCacheStructure = errors.New("invalid search database structure; use --reb
 
 // A disposable cache must not make a search fail on a corrupt database page.
 func cacheAccess(fn func() error) (err error) {
+	// bbolt reads mmap-backed pages with unsafe pointers. Ordinary recover
+	// cannot catch a non-nil-address memory fault unless this goroutine opts in.
+	previous := debug.SetPanicOnFault(true)
+	defer debug.SetPanicOnFault(previous)
 	defer func() {
 		if recover() != nil {
 			err = errCacheStructure
@@ -57,6 +62,9 @@ func (s *searchIndex) openDatabase() (err error) {
 		s.lock = nil
 		return errors.New("search cache busy; scanning source mail")
 	}
+	previous := debug.SetPanicOnFault(true)
+	defer debug.SetPanicOnFault(previous)
+	var openedFile *os.File
 	defer func() {
 		if recover() != nil {
 			err = errCacheStructure
@@ -64,6 +72,11 @@ func (s *searchIndex) openDatabase() (err error) {
 		}
 		if err != nil {
 			s.close()
+			// Open may panic before returning a DB handle. Release its file
+			// descriptor and flock too, so an explicit rebuild can run next.
+			if openedFile != nil {
+				openedFile.Close()
+			}
 		}
 	}()
 	path := filepath.Join(s.dir, "messages.db")
@@ -81,7 +94,11 @@ func (s *searchIndex) openDatabase() (err error) {
 			return statErr
 		}
 	}
-	opts := &bolt.Options{Timeout: 100 * time.Millisecond, OpenFile: openPrivateCacheFile, NoSync: true, NoGrowSync: true}
+	opts := &bolt.Options{Timeout: 100 * time.Millisecond, OpenFile: func(path string, flags int, perm os.FileMode) (*os.File, error) {
+		f, err := openSearchDatabaseFile(path, flags, perm)
+		openedFile = f
+		return f, err
+	}, NoSync: true, NoGrowSync: true}
 	s.db, err = bolt.Open(path, 0600, opts)
 	if errors.Is(err, bolterrors.ErrInvalid) || errors.Is(err, bolterrors.ErrChecksum) || errors.Is(err, bolterrors.ErrVersionMismatch) {
 		// The lock excludes other CLI readers while replacing a corrupt cache.

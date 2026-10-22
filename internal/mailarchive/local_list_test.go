@@ -53,3 +53,51 @@ func TestListPreservesFatalErrorsAndCancellation(t *testing.T) {
 		t.Fatalf("oversized header not isolated: %v %s", err, &warnings)
 	}
 }
+
+func TestListRejectsArtificialHeaderEOFAndContinues(t *testing.T) {
+	const limit = 1 << 20
+	for _, raw := range []string{
+		strings.Repeat("X: 123\r\n", limit/8) + "Subject: hidden\r\nFrom: hidden@example.com\r\n\r\nbody",
+		strings.Repeat("X: 123\r\n", limit/8-1) + "Subject: hidden\r\n\r\nbody",
+	} {
+		dir := t.TempDir()
+		bad := searchTestMail(t, dir, "a-oversized", raw)
+		searchTestMail(t, dir, "b-good", "Subject: keep\r\n\r\nbody")
+		var out, warnings bytes.Buffer
+		if err := ListContext(context.Background(), dir, &out, &warnings); err != nil {
+			t.Fatal(err)
+		}
+		if got := resultNames(t, out.Bytes()); strings.Join(got, ",") != "b-good" {
+			t.Fatalf("truncated header returned as valid mail: %v", got)
+		}
+		if !strings.Contains(warnings.String(), "headers exceed 1 MiB") || !strings.Contains(warnings.String(), "scanned=2 listed=1 skipped=1") {
+			t.Fatalf("missing header limit diagnostics: %s", &warnings)
+		}
+		got, err := os.ReadFile(bad)
+		if err != nil || string(got) != raw {
+			t.Fatal("source mail changed", err)
+		}
+	}
+}
+
+func TestListHeaderLimitAcceptsBoundaryAndLargeBody(t *testing.T) {
+	const limit = 1 << 20
+	tail := "Subject: boundary\r\n\r\n"
+	boundary := "X-Pad: " + strings.Repeat("x", limit-len(tail)-len("X-Pad: \r\n")) + "\r\n" + tail
+	for _, raw := range []string{
+		boundary + strings.Repeat("body", limit/2),
+		"Subject: small\r\n\r\n" + strings.Repeat("body", limit/2),
+		// Preserve net/mail's acceptance of a genuine EOF after header fields.
+		strings.Repeat("X: 123\r\n", limit/8),
+	} {
+		dir := t.TempDir()
+		searchTestMail(t, dir, "valid", raw)
+		var out, warnings bytes.Buffer
+		if err := ListContext(context.Background(), dir, &out, &warnings); err != nil || warnings.Len() != 0 {
+			t.Fatalf("valid header rejected: %v %s", err, &warnings)
+		}
+		if got := resultNames(t, out.Bytes()); strings.Join(got, ",") != "valid" {
+			t.Fatalf("mail missing: %v", got)
+		}
+	}
+}
