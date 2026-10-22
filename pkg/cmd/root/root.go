@@ -33,7 +33,7 @@ func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return mailarchive.List(archiveDir, cmd.OutOrStdout())
+			return mailarchive.ListContext(cmd.Context(), archiveDir, cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
 	list.Flags().StringVar(&dir, "dir", config.DefaultArchiveDir, "Local archive directory")
