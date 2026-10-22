@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type SearchOptions struct {
@@ -16,19 +18,24 @@ type SearchOptions struct {
 	Limit                          int
 	NoIndex, RebuildIndex          bool
 	Quiet                          bool
+	After, Before, Sort            string
 }
 
 // Search writes result JSON Lines to out and optional diagnostics to errOut.
 // Bad individual messages are skipped; directory, cancellation and output
 // failures remain fatal. Source mail is never modified.
 func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, errOut ...io.Writer) error {
+	order, err := newSearchOrder(opts)
+	if err != nil {
+		return err
+	}
 	if opts.Limit < 0 {
 		return errors.New("--limit must be non-negative")
 	}
 	if opts.NoIndex && opts.RebuildIndex {
 		return errors.New("--no-index and --rebuild-index cannot be used together")
 	}
-	if opts.Query+opts.Subject+opts.From+opts.To+opts.Body == "" {
+	if opts.Query+opts.Subject+opts.From+opts.To+opts.Body+opts.After+opts.Before == "" && !order.sorted() {
 		return errors.New("provide a query or a search field")
 	}
 	if err := ctx.Err(); err != nil {
@@ -74,7 +81,7 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 	contains := func(value, query string) bool {
 		return strings.Contains(strings.ToLower(value), strings.ToLower(query))
 	}
-	return filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -143,6 +150,23 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 			}
 			return nil
 		}
+		dateHeader := m.Date
+		var date time.Time
+		var dateErr error
+		if order.filtered() {
+			date, dateErr = mail.ParseDate(m.Date)
+		}
+		if order.filtered() {
+			if !cached {
+				index.save(rel, info, m, false, "")
+			}
+			if dateErr != nil {
+				return fail(errors.New("missing or invalid Date header for date filter"))
+			}
+			if !order.includes(date) {
+				return nil
+			}
+		}
 		headerMatch := contains(m.Subject+"\n"+m.From+"\n"+m.To, opts.Query)
 		needsBody := opts.Body != "" || opts.Query != "" && !headerMatch
 		bodyKnown := cached && record.Body
@@ -185,9 +209,28 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		// An upgraded header-only cache may reopen a changed source. Rank and
+		// filter the headers actually decoded with the body, not the old copy.
+		if order.sorted() || (order.filtered() && m.Date != dateHeader) {
+			date, dateErr = mail.ParseDate(m.Date)
+			if order.filtered() {
+				if dateErr != nil {
+					return fail(errors.New("missing or invalid Date header for date filter"))
+				}
+				if !order.includes(date) {
+					return nil
+				}
+			}
+		}
 		result := map[string]any{"path": path, "subject": m.Subject, "from": m.From, "to": m.To, "date": m.Date}
 		if bodyKnown {
 			result["attachments"] = len(m.Attachments)
+		}
+		if order.sorted() {
+			order.add(searchHit{row: result, date: date, validDate: dateErr == nil, path: path})
+			matched = len(order.hits)
+			progress.update(scanned, matched, skipped, cacheHits)
+			return nil
 		}
 		if err := enc.Encode(result); err != nil {
 			return err
@@ -199,4 +242,16 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	for _, hit := range order.results() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := enc.Encode(hit.row); err != nil {
+			return err
+		}
+	}
+	return nil
 }
