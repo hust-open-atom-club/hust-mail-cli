@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	bolt "go.etcd.io/bbolt"
 )
 
 const searchIndexVersion = 3
@@ -27,10 +29,14 @@ type searchIndexRecord struct {
 }
 
 type searchIndex struct {
-	root, dir string
-	disabled  bool
-	rebuild   bool
-	warn      func(error)
+	root, dir    string
+	disabled     bool
+	rebuild      bool
+	warn         func(error)
+	db           *bolt.DB
+	lock         *os.File
+	pending      map[string][]byte
+	pendingBytes int
 }
 
 func (s *searchIndex) recordPath(rel string) string {
@@ -43,6 +49,70 @@ func (s *searchIndex) load(rel string, info os.FileInfo) (searchIndexRecord, boo
 	if s.disabled || s.rebuild {
 		return record, false
 	}
+	legacy := false
+	if s.db != nil {
+		var data []byte
+		if pending, ok := s.pending[rel]; ok {
+			data = pending
+		} else {
+			err := cacheAccess(func() error {
+				return s.db.View(func(tx *bolt.Tx) error {
+					bucket := tx.Bucket(searchBucket)
+					if bucket == nil {
+						return nil
+					}
+					value := bucket.Get([]byte(rel))
+					if value == nil {
+						return nil
+					}
+					if len(value) > maxIndexRecordBytes {
+						return errors.New("oversized search cache record")
+					}
+					return json.Unmarshal(value, &record)
+				})
+			})
+			if err != nil {
+				if errors.Is(err, errCacheStructure) {
+					s.disabled = true
+				}
+				s.warn(err)
+				return searchIndexRecord{}, false
+			}
+		}
+		if data != nil {
+			if err := json.Unmarshal(data, &record); err != nil {
+				s.warn(err)
+				return searchIndexRecord{}, false
+			}
+		}
+	}
+	if record.Path == "" {
+		// Import old per-message JSON caches lazily; subsequent queries use DB.
+		var hit bool
+		record, hit = s.loadLegacy(rel)
+		if !hit {
+			return searchIndexRecord{}, false
+		}
+		legacy = true
+	}
+	if record.Version != searchIndexVersion || record.Path != rel || record.Size != info.Size() || record.ModTime != info.ModTime().UnixNano() {
+		return searchIndexRecord{}, false
+	}
+	// The path may have been atomically replaced since WalkDir took info.
+	// Validate again after decoding the cache, including identity even when a
+	// replacement preserves the original size and modification timestamp.
+	current, err := os.Lstat(filepath.Join(s.root, rel))
+	if err != nil || !current.Mode().IsRegular() || !os.SameFile(info, current) || current.Size() != info.Size() || !current.ModTime().Equal(info.ModTime()) {
+		return searchIndexRecord{}, false
+	}
+	if legacy && s.db != nil {
+		s.stage(rel, record)
+	}
+	return record, true
+}
+
+func (s *searchIndex) loadLegacy(rel string) (searchIndexRecord, bool) {
+	var record searchIndexRecord
 	path := s.recordPath(rel)
 	stat, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -67,16 +137,6 @@ func (s *searchIndex) load(rel string, info os.FileInfo) (searchIndexRecord, boo
 		s.warn(errors.New("invalid search index JSON; rebuilding from source mail"))
 		return searchIndexRecord{}, false
 	}
-	if record.Version != searchIndexVersion || record.Path != rel || record.Size != info.Size() || record.ModTime != info.ModTime().UnixNano() {
-		return searchIndexRecord{}, false
-	}
-	// The path may have been atomically replaced since WalkDir took info.
-	// Validate again after decoding the cache, including identity even when a
-	// replacement preserves the original size and modification timestamp.
-	current, err := os.Lstat(filepath.Join(s.root, rel))
-	if err != nil || !current.Mode().IsRegular() || !os.SameFile(info, current) || current.Size() != info.Size() || !current.ModTime().Equal(info.ModTime()) {
-		return searchIndexRecord{}, false
-	}
 	return record, true
 }
 
@@ -90,6 +150,10 @@ func (s *searchIndex) save(rel string, info os.FileInfo, message parsedMessage, 
 		return
 	}
 	record := searchIndexRecord{Version: searchIndexVersion, Path: rel, Size: info.Size(), ModTime: info.ModTime().UnixNano(), Body: body, BodyError: bodyError, Message: message}
+	if s.db != nil {
+		s.stage(rel, record)
+		return
+	}
 	if err := writeSearchCache(s.recordPath(rel), record); err != nil {
 		s.warn(err)
 		s.disabled = true
@@ -101,6 +165,11 @@ func (s *searchIndex) prepare(ctx context.Context) {
 		return
 	}
 	if err := privateDir(s.dir); err != nil {
+		s.warn(err)
+		s.disabled = true
+		return
+	}
+	if err := s.openDatabase(); err != nil {
 		s.warn(err)
 		s.disabled = true
 		return

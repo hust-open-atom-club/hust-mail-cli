@@ -108,10 +108,10 @@ func TestSearchIndexReuseInvalidationAndRebuild(t *testing.T) {
 	}
 	cacheDir := filepath.Join(dir, ".search-index")
 	entries, err := os.ReadDir(cacheDir)
-	if err != nil || len(entries) != 1 {
+	if err != nil || len(entries) != 2 {
 		t.Fatalf("index not created: %v %v", entries, err)
 	}
-	entry := filepath.Join(cacheDir, entries[0].Name())
+	entry := filepath.Join(cacheDir, "messages.db")
 	for _, item := range []struct {
 		path string
 		perm os.FileMode
@@ -164,9 +164,7 @@ func TestSearchIndexReuseInvalidationAndRebuild(t *testing.T) {
 	if rebuilt, _ := run(SearchOptions{Body: "needle", RebuildIndex: true}); !strings.Contains(rebuilt, `"subject":"new"`) {
 		t.Fatal("rebuild lost matching source", rebuilt)
 	}
-	if _, err := os.Stat(entry); !os.IsNotExist(err) {
-		t.Fatal("rebuild retained stale cache", err)
-	}
+	assertSearchDatabaseKeys(t, dir, []string{"new.eml"})
 	if _, err := os.Stat(unrelated); err != nil {
 		t.Fatal("rebuild removed unrelated file", err)
 	}
@@ -255,10 +253,10 @@ func TestSearchIndexEntrySymlinkDoesNotExposeExternalData(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries, err := os.ReadDir(filepath.Join(dir, ".search-index"))
-	if err != nil || len(entries) != 1 {
+	if err != nil || len(entries) != 2 {
 		t.Fatal("index missing", err)
 	}
-	entry := filepath.Join(dir, ".search-index", entries[0].Name())
+	entry := filepath.Join(dir, ".search-index", "messages.db")
 	external := filepath.Join(t.TempDir(), "external.json")
 	original := []byte("must not be read as a cache or overwritten")
 	if err := os.WriteFile(external, original, 0600); err != nil {
@@ -279,8 +277,8 @@ func TestSearchIndexEntrySymlinkDoesNotExposeExternalData(t *testing.T) {
 		t.Fatal("external file modified", err)
 	}
 	info, err := os.Lstat(entry)
-	if err != nil || !info.Mode().IsRegular() {
-		t.Fatal("cache was not rebuilt as a regular file", err)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("unsafe cache symlink should remain untouched", err)
 	}
 }
 
@@ -332,9 +330,12 @@ func TestSearchIndexRejectsSourceChangesAfterSnapshot(t *testing.T) {
 				}
 			}
 			index := searchIndex{root: dir, dir: filepath.Join(dir, ".search-index"), warn: func(err error) { t.Fatal(err) }}
+			index.prepare(context.Background())
+			defer index.close()
 			if record, hit := index.load("message.eml", snapshot); hit {
 				t.Fatalf("reused stale cache after %s: %+v", mode, record)
 			}
+			index.close()
 			if mode != "removed" && mode != "replacement_same_fingerprint" {
 				var out bytes.Buffer
 				if err := Search(context.Background(), dir, SearchOptions{Body: "updated"}, &out); err != nil || !strings.Contains(out.String(), `"subject":"new"`) {
