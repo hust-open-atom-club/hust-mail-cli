@@ -138,7 +138,7 @@ hust-mail-cli list
 hust-mail-cli list --dir ~/HUST-Mail/
 ```
 
-单封邮件无法读取或邮件头损坏时，输出警告到 stderr 并继续，结束时输出 `List: scanned=... listed=... skipped=...`。stdout 保持纯 JSON Lines，个别邮件跳过时退出成功；目录访问、取消或结果写入失败仍返回非零。`list` 不读取或建立搜索缓存，正文损坏不会阻止列出正常邮件头。
+邮件头读取上限为 1 MiB，正文大小不计入该限制。单封邮件无法读取、邮件头损坏或超限时，输出警告到 stderr 并继续，结束时输出 `List: scanned=... listed=... skipped=...`。stdout 保持纯 JSON Lines，个别邮件跳过时退出成功；目录访问、取消或结果写入失败仍返回非零。`list` 不读取或建立搜索缓存，正文损坏不会阻止列出正常邮件头。
 
 `--dir` 覆盖配置中的归档目录，未配置时使用 `~/HUST-Mail/`。输出字段为 `path`、`subject`、`from`、`date`；主题会解码，发件人保留原始头字段值。`path` 可用于后续读取：
 
