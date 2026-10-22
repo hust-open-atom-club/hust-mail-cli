@@ -68,6 +68,7 @@ func Search(ctx context.Context, dir string, opts SearchOptions, out io.Writer, 
 		}
 	}}
 	index.prepare(ctx)
+	defer index.close()
 	enc := json.NewEncoder(out)
 	enc.SetEscapeHTML(false)
 	contains := func(value, query string) bool {
