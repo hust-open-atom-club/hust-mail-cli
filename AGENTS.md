@@ -6,11 +6,12 @@
 - `pkg/cmd/root/`: Cobra command construction, flags, configuration precedence, and command tests.
 - `internal/config/`: JSON configuration loading and validation.
 - `internal/mailarchive/`: read-only IMAP receiving, local storage, and local message reading.
+- `internal/mailsend/`: authenticated SMTP/TLS submission and MIME construction.
 - Tests live beside their implementation in `*_test.go`. `config.example.json` contains placeholder settings; `README.md` documents user workflows.
 
-Keep protocol and storage logic outside Cobra handlers. Commands include `sync`, `folders`, `list`, `read`, `search`, and `attachments list/export`; SMTP is deferred. Local MIME operations must preserve source messages, avoid network access, and prevent attachment path traversal or overwrites. `read --raw` preserves original bytes; default `read` shows decoded text. Sync recovery must preserve `.eml` and live locks, and never unlink the persistent `.sync.flock` inode.
+Keep protocol and storage logic outside Cobra handlers. Commands include `sync`, `folders`, `list`, `read`, `search`, `attachments list/export`, and `send`. Local MIME operations must preserve source messages, avoid network access, and prevent attachment path traversal or overwrites. `read --raw` preserves original bytes; default `read` shows decoded text. Sync recovery must preserve `.eml` and live locks, and never unlink the persistent `.sync.flock` inode.
 
-Limit protocol support to IMAP for receiving and SMTP for sending. POP3 is out of scope: do not add or retain it as a compatibility option. IMAP must remain read-only. SMTP implementation remains deferred; do not enable IMAP writes as part of SMTP work.
+Limit protocol support to IMAP for receiving and SMTP for sending. POP3 is out of scope: do not add or retain it as a compatibility option. IMAP must remain read-only. SMTP sends only through explicit `send` invocations over verified implicit TLS; do not enable IMAP writes as part of SMTP work. Never automatically retry a submission whose acceptance is uncertain, or equate server acceptance with delivery.
 
 Search indexes are disposable derived data: verify source fingerprints before reuse, preserve `--no-index` for read-only archives, and bump `searchIndexVersion` when decoded search semantics change.
 

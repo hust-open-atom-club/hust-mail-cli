@@ -4,6 +4,7 @@
 
 | 命令 | 功能 | 是否连接邮箱 |
 | --- | --- | --- |
+| [send](command-reference.md#send-发送纯文本邮件) | 通过 SMTP 提交纯文本邮件 | 是，发送 |
 | [sync](command-reference.md#sync-同步邮件) | 增量同步邮件到本地归档 | 是，只读 |
 | [folders](command-reference.md#folders-列出文件夹) | 列出可读取的 IMAP 文件夹 | 是，只读 |
 | [list](command-reference.md#list-列出本地邮件) | 输出本地邮件头列表 | 否 |
@@ -27,7 +28,7 @@ hust-mail-cli attachments list /path/to/message.eml --json
 
 `list`、`search`、`attachments list/export` 原本就输出 JSON Lines，加上 `--json` 后字段与格式保持一致。`read --json` 输出 `path`、`subject`、`from`、`to`、`date`、`body` 和附件元数据数组 `attachments`；无附件时为 `[]`。`read --raw` 与 `--json` 不可同时使用。
 
-只读收信的连接选项、密码输入方式和权限要求见[配置指南](configuration.md)。SMTP 暂未实现；没有发送、回复、转发、删除或 doctor 子命令。
+只读收信的连接选项、密码输入方式和权限要求见[配置指南](configuration.md)。SMTP 纯文本发信见 `send`；没有回复、转发、删除或 doctor 子命令。
 
 ## sync 同步邮件
 
@@ -283,3 +284,19 @@ source <(hust-mail-cli completion bash)
 ```
 
 Zsh 可将脚本保存到 `$fpath` 中的目录，并通过 `compinit` 加载。具体选项和安装说明见 `hust-mail-cli completion <shell> --help`。
+
+## send 发送纯文本邮件
+
+仅在显式执行 `send` 时通过 SMTP 发信，发件人为登录账号。收信和本地阅读命令不会触发发送。
+
+```sh
+hust-mail-cli send --to recipient@example.com --subject "测试" --body "你好"
+hust-mail-cli send --to first@example.com --to second@example.com --subject "通知" --body-file notice.txt
+printf '你好\n' | hust-mail-cli send --to recipient@example.com --subject "测试" --body-file - --json
+```
+
+`--to` 和 `--subject` 必须显式提供；`--to` 可重复，也可传入一组带逗号的地址。`--body` 与 `--body-file` 必须且只能选一个；`--body-file -` 读取标准输入，正文上限为 10 MiB。正文为 UTF-8 纯文本，自动生成 MIME、Date 和 Message-ID，采用 quoted-printable 传输编码。暂不支持 HTML、附件、抄送、密送、回复或转发；信封地址仅支持 ASCII，收件人显示名称及主题支持中文。
+
+`--user`、`--host`、`--port` 和 `--timeout` 的优先级见[SMTP 配置](configuration.md#smtp-发信配置)。SMTP 默认地址为 `mail.hust.edu.cn:465`，专用密码必须在配置或环境变量中提供，不支持密码命令行参数或禁用 TLS 校验。
+
+成功输出表示服务器在 DATA 结束后接受提交，**不代表最终投递成功**。`--json` 输出 `{"status":"submitted","message_id":"<...>","recipients":1}`。如果任意收件人被拒，客户端不会提交正文，不做部分收件人发送。发送过程中失败返回非零；提交结果不确定时请先核查邮箱，避免重复发送。客户端不会自动重试，也不通过 IMAP 保存副本到已发送文件夹。

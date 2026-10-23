@@ -12,7 +12,7 @@
   "host": "imap.hust.edu.cn",
   "port": 993,
   "smtp": {
-    "host": "smtp.hust.edu.cn",
+    "host": "mail.hust.edu.cn",
     "port": 465
   },
   "dir": "~/HUST-Mail/",
@@ -22,7 +22,7 @@
 }
 ```
 
-服务器已预填为 IMAP `imap.hust.edu.cn:993` 和 SMTP `smtp.hust.edu.cn:465`，均使用隐式 TLS（SSL）。只需填写 `user`（完整邮箱地址）和 `password`（网页端生成的专用密码）。`smtp` 当前仅预留配置，不建立连接或启用发信。
+服务器已预填为 IMAP `imap.hust.edu.cn:993` 和 SMTP `mail.hust.edu.cn:465`，均使用隐式 TLS（SSL）。只需填写 `user`（完整邮箱地址）和 `password`（网页端生成的专用密码）。`send` 使用 `smtp.host` / `smtp.port` 连接 SMTP，复用 `user` 和 `password`；加载配置本身不会连接或发信。
 
 可从仓库中的 `config.example.json` 复制后填写：
 
@@ -75,11 +75,17 @@ CLI 不提供密码命令行参数，不输出密码，也不会把密码写入�
 
 ## 连接与只读行为
 
-默认使用邮箱网页配置中提供的 `imap.hust.edu.cn:993` 收信，预留 `smtp.hust.edu.cn:465` 发信配置。可通过 `--host`、`--port` 覆盖收信地址。只支持隐式 TLS，验证服务器证书，最低 TLS 1.2。已有配置中的主机会继续生效；更换主机会生成独立账号归档目录，保留旧归档，可能重复下载。
+默认使用邮箱网页配置中提供的 `imap.hust.edu.cn:993` 收信，使用 `mail.hust.edu.cn:465` 发信。可通过 `--host`、`--port` 覆盖收信地址。只支持隐式 TLS，验证服务器证书，最低 TLS 1.2。已有配置中的主机会继续生效；更换主机会生成独立账号归档目录，保留旧归档，可能重复下载。
 
 - IMAP 使用 `EXAMINE` 只读选择文件夹，使用 `BODY.PEEK[]` 读取，不标记已读，不修改标志，不执行删除、清除或上传命令。
-- 当前没有 SMTP、发送、回复、转发功能。后续可增加独立的 SMTP 模块。
+- `send` 仅提供 SMTP 纯文本发送；暂不提供附件发送、回复、转发或 IMAP 写入。
 
 `--timeout` 默认 30 分钟，覆盖连接、认证和同步，不包含终端输入密码的时间。连接阶段最多等待 30 秒；取消操作或总超时会关闭连接。
 
 同步参数见 [sync](command-reference.md#sync-同步邮件)，归档目录和增量行为见[本地归档](archive.md)。
+
+## SMTP 发信配置
+
+`send` 使用独立的 `smtp.host`（默认 `mail.hust.edu.cn`）和 `smtp.port`（默认 `465`），与 IMAP 地址独立。使用隐式 TLS、系统信任库和最低 TLS 1.2，不支持明文、跳过证书校验或 STARTTLS。旧配置中显式设置的 SMTP 地址会保留；若旧地址 `smtp.hust.edu.cn` 无法解析，请手动改成 `mail.hust.edu.cn`。
+
+账号和专用密码沿用配置的 `user`、`password`，支持 `HUST_MAIL_USER`、`HUST_MAIL_PASSWORD` 覆盖，`--user` 优先。`send` 不交互读取密码，未配置密码时报错。`--host` / `--port` 仅覆盖该次 SMTP 连接；`--timeout` 覆盖配置的总连接和提交超时。具体用法见[发信命令](command-reference.md#send-发送纯文本邮件)。
