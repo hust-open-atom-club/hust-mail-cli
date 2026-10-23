@@ -85,8 +85,14 @@ func addresses(o Options) (*mail.Address, []*mail.Address, error) {
 	}
 	// net/smtp does not negotiate internationalized envelope addresses.
 	for _, a := range append([]*mail.Address{from}, to...) {
+		if !utf8.ValidString(a.Name) {
+			return nil, nil, errors.New("display names must be valid UTF-8")
+		}
 		if !strings.Contains(a.Address, "@") {
 			return nil, nil, errors.New("email addresses must include a domain")
+		}
+		if len((&mail.Address{Address: a.Address}).String()) > 256 {
+			return nil, nil, errors.New("SMTP mailbox exceeds the 256-byte path limit")
 		}
 		for _, r := range a.Address {
 			if r > 127 || r < 32 || r == 127 {
@@ -98,17 +104,17 @@ func addresses(o Options) (*mail.Address, []*mail.Address, error) {
 }
 
 // Each RFC 2047 encoded-word fits within 75 bytes. Fold only between words,
-// whose separating whitespace decoders ignore, preserving the subject exactly
+// whose separating whitespace decoders ignore, preserving the header text exactly
 // even for long ASCII tokens, repeated spaces, tabs and multibyte characters.
-func encodedSubject(subject string) string {
+func encodedHeaderWords(value string) string {
 	var words []string
-	for len(subject) > 0 {
-		n := min(42, len(subject))
-		for n < len(subject) && !utf8.RuneStart(subject[n]) {
+	for len(value) > 0 {
+		n := min(42, len(value))
+		for n < len(value) && !utf8.RuneStart(value[n]) {
 			n--
 		}
-		words = append(words, "=?UTF-8?B?"+base64.StdEncoding.EncodeToString([]byte(subject[:n]))+"?=")
-		subject = subject[n:]
+		words = append(words, "=?UTF-8?B?"+base64.StdEncoding.EncodeToString([]byte(value[:n]))+"?=")
+		value = value[n:]
 	}
 	return strings.Join(words, "\r\n ")
 }
@@ -125,10 +131,17 @@ func message(o Options) ([]byte, string, error) {
 	id := "<" + hex.EncodeToString(random[:]) + "@" + from.Address[strings.LastIndex(from.Address, "@")+1:] + ">"
 	var names []string
 	for _, a := range to {
-		names = append(names, a.String())
+		// Address.String quotes the mailbox correctly but does not fold long
+		// display names. Encode the name separately, keeping the angle address
+		// on its own continuation line when a name is present.
+		address := (&mail.Address{Address: a.Address}).String()
+		if a.Name != "" {
+			address = encodedHeaderWords(a.Name) + "\r\n " + address
+		}
+		names = append(names, address)
 	}
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\nMessage-ID: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n", from.String(), strings.Join(names, ",\r\n "), encodedSubject(o.Subject), time.Now().Format(time.RFC1123Z), id)
+	fmt.Fprintf(&b, "From: %s\r\nTo: %s\r\nSubject: %s\r\nDate: %s\r\nMessage-ID: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n", from.String(), strings.Join(names, ",\r\n "), encodedHeaderWords(o.Subject), time.Now().Format(time.RFC1123Z), id)
 	w := quotedprintable.NewWriter(&b)
 	if _, err := w.Write([]byte(o.Body)); err != nil {
 		return nil, "", err

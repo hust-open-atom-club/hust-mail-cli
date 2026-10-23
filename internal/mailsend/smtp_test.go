@@ -168,6 +168,8 @@ func TestSendRejectsInvalidInputBeforeConnecting(t *testing.T) {
 		func(o *Options) { o.Password = "" },
 		func(o *Options) { o.Body = string([]byte{0xff}) }, func(o *Options) { o.Port = 0 }, func(o *Options) { o.Timeout = 0 },
 		func(o *Options) { o.To = nil }, func(o *Options) { o.To = []string{"test"} },
+		func(o *Options) { o.To = []string{strings.Repeat("a", 1000) + "@example.com"} },
+		func(o *Options) { o.To = []string{"=?UTF-8?B?/w==?= <to@example.com>"} },
 		func(o *Options) { o.Body = strings.Repeat("x", MaxBodyBytes+1) },
 	} {
 		o := good
@@ -202,6 +204,33 @@ func TestMessageFoldsSubjectWithoutChangingText(t *testing.T) {
 		decoded, err := new(mime.WordDecoder).DecodeHeader(msg.Header.Get("Subject"))
 		if err != nil || decoded != subject {
 			t.Fatalf("subject changed during folding (input bytes=%d): %v", len(subject), err)
+		}
+	}
+}
+
+func TestMessageFoldsLongRecipientNames(t *testing.T) {
+	for _, name := range []string{strings.Repeat("测", 1000), strings.Repeat("a", 2000), strings.Repeat("word  with\ttabs ", 100), strings.Repeat("中文 📨 ", 100)} {
+		o := Options{User: "sender@example.com", To: []string{(&mail.Address{Name: name, Address: "first@example.com"}).String(), "Second <second@example.com>"}, Subject: "test", Body: "body"}
+		raw, _, err := message(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		header := strings.SplitN(string(raw), "\r\n\r\n", 2)[0]
+		for _, line := range strings.Split(header, "\r\n") {
+			if len(line) > 78 {
+				t.Fatalf("recipient header line is %d bytes, want <=78", len(line))
+			}
+		}
+		msg, err := mail.ReadMessage(bytes.NewReader(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		to, err := msg.Header.AddressList("To")
+		if err != nil || len(to) != 2 {
+			t.Fatalf("cannot decode folded recipients: %v", err)
+		}
+		if to[0].Name != name || to[0].Address != "first@example.com" || to[1].Name != "Second" || to[1].Address != "second@example.com" {
+			t.Fatal("folding changed recipient identity")
 		}
 	}
 }
