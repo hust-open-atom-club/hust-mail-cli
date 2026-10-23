@@ -40,9 +40,9 @@ hust-mail-cli sync --retry-ignored --days 0
 
 如果相同 UID 持续失败，请在网页端检查该邮件是否能完整打开或下载，必要时向邮箱服务支持反馈 UID 和大小。服务器暂不提供正文时，该邮件不会归档；`ignored` 不代表这些邮件已备份。请将忽略记录与归档一起保留，删除后下次同步会重新尝试。
 
-## 旧配置中的 POP3
+## 旧连接配置迁移
 
-CLI 不再支持 POP3。若旧配置设置了 `protocol: "pop3"`，请改为 `protocol: "imap"`、`host: "mail.hust.edu.cn"`、`port: 993`，并确认专用密码已启用 IMAP 权限。`--protocol pop3` 同样会报错，不会连接服务器。已有本地 `.eml` 归档仍可读取和搜索，不会被删除；切换为 IMAP 后使用独立账号归档，可能重新下载相同邮件。
+CLI 固定使用只读 IMAP 收信和 SMTP 发信，不再支持 POP3 或连接覆盖。旧配置需删除 `protocol`、`host`、`port`、`smtp`，命令行也需移除 `--protocol`、`--host`、`--port`。收到 `removed config fields` 时，请按提示删除对应字段，参见[迁移说明](configuration.md#旧配置迁移)。已有 `.eml` 仍可读取；`list`、`search` 使用的配置也需完成迁移，或通过 `--config` 指定精简配置。`read` 和附件操作不读取账号配置。迁移不删除旧归档。
 
 ## 正文无法解码或超过限制
 

@@ -44,18 +44,19 @@ chmod 700 ~/.config/hust-mail-cli
 chmod 600 ~/.config/hust-mail-cli/config.json
 ```
 
-编辑 `~/.config/hust-mail-cli/config.json`，只需替换以下两项，保留模板中的其他字段：
+编辑 `~/.config/hust-mail-cli/config.json`，只需填写 `user` 和 `password`，`dir` 可保留默认值或改为自己的归档目录：
 
 ```json
 {
   "user": "你的完整邮箱@hust.edu.cn",
-  "password": "网页端生成的专用密码"
+  "password": "网页端生成的专用密码",
+  "dir": "~/HUST-Mail/"
 }
 ```
 
-上面的 JSON 仅展示需要填写的字段；完整模板见 [config.example.json](../config.example.json)。配置以明文保存在本机，请保持 `0600` 权限。
+这就是可直接使用的精简配置；模板见 [config.example.json](../config.example.json)。配置以明文保存在本机，请保持 `0600` 权限。
 
-服务器已预填为：
+服务器由程序内置，无需写入配置：
 
 | 用途 | 主机 | TLS 端口 | 当前行为 |
 | --- | --- | --- | --- |
