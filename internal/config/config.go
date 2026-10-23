@@ -11,7 +11,7 @@ import (
 )
 
 const DefaultArchiveDir = "~/HUST-Mail/"
-const DefaultIMAPHost = "imap.hust.edu.cn"
+const DefaultIMAPHost = "mail.hust.edu.cn"
 
 // SMTPConfig configures authenticated implicit-TLS SMTP submission.
 // Loading these settings never opens an SMTP connection.

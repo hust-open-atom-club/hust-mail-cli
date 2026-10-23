@@ -43,7 +43,7 @@ func TestExampleServerSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Protocol != "imap" || cfg.Host != "imap.hust.edu.cn" || cfg.Port != 993 || cfg.SMTP.Host != "mail.hust.edu.cn" || cfg.SMTP.Port != 465 {
+	if cfg.Protocol != "imap" || cfg.Host != "mail.hust.edu.cn" || cfg.Port != 993 || cfg.SMTP.Host != "mail.hust.edu.cn" || cfg.SMTP.Port != 465 {
 		t.Fatal("example must prefill HUST TLS servers")
 	}
 }
