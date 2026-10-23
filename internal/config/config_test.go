@@ -11,7 +11,7 @@ func TestLoadDefaultsAndConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	cfg, err := Load("")
-	if err != nil || cfg.Host != DefaultIMAPHost || cfg.Protocol != "imap" || cfg.SMTP.Host != "smtp.hust.edu.cn" || cfg.SMTP.Port != 465 || cfg.Timeout != "30m" || cfg.Dir != "~/HUST-Mail/" {
+	if err != nil || cfg.Host != DefaultIMAPHost || cfg.Protocol != "imap" || cfg.SMTP.Host != "mail.hust.edu.cn" || cfg.SMTP.Port != 465 || cfg.Timeout != "30m" || cfg.Dir != "~/HUST-Mail/" {
 		t.Fatal("default config failed")
 	}
 	path := filepath.Join(home, ".config", "hust-mail-cli", "config.json")
@@ -43,7 +43,7 @@ func TestExampleServerSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Protocol != "imap" || cfg.Host != "imap.hust.edu.cn" || cfg.Port != 993 || cfg.SMTP.Host != "smtp.hust.edu.cn" || cfg.SMTP.Port != 465 {
+	if cfg.Protocol != "imap" || cfg.Host != "imap.hust.edu.cn" || cfg.Port != 993 || cfg.SMTP.Host != "mail.hust.edu.cn" || cfg.SMTP.Port != 465 {
 		t.Fatal("example must prefill HUST TLS servers")
 	}
 }

@@ -5,7 +5,7 @@
   "host": "imap.hust.edu.cn",
   "port": 993,
   "smtp": {
-    "host": "smtp.hust.edu.cn",
+    "host": "mail.hust.edu.cn",
     "port": 465
   },
   "dir": "~/HUST-Mail/",

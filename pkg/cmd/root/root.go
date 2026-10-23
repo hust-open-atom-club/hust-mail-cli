@@ -16,8 +16,8 @@ import (
 func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "hust-mail-cli <command>",
-		Short:         "Read and archive HUST email using read-only IMAP",
-		Long:          "Read and archive HUST email over verified TLS. Remote deletion, flag changes and SMTP sending are not implemented.",
+		Short:         "Read HUST mail over IMAP and send over SMTP",
+		Long:          "Read and archive HUST email over read-only IMAP, or submit plain-text mail over SMTP. All connections verify TLS; IMAP deletion and flag changes are not implemented.",
 		SilenceErrors: true, SilenceUsage: true,
 	}
 	cmd.SetOut(stdout)
@@ -37,7 +37,7 @@ func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 		},
 	}
 	list.Flags().StringVar(&dir, "dir", config.DefaultArchiveDir, "Local archive directory")
-	cmd.AddCommand(list, newReadCommand(), newSearchCommand(), newAttachmentsCommand())
+	cmd.AddCommand(newSendCommand(), list, newReadCommand(), newSearchCommand(), newAttachmentsCommand())
 	return cmd
 }
 
