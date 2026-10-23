@@ -26,7 +26,7 @@ func TestSMTPSubmission(t *testing.T) {
 	roots := x509.NewCertPool()
 	roots.AddCert(certServer.Certificate())
 	certServer.Close()
-	for _, mode := range []string{"success", "recipient-rejected", "auth-rejected", "quit-disconnect", "untrusted", "canceled"} {
+	for _, mode := range []string{"success", "recipient-rejected", "auth-rejected", "quit-disconnect", "untrusted", "canceled", "quoted-space", "quoted-escape"} {
 		t.Run(mode, func(t *testing.T) {
 			listener, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})
 			if err != nil {
@@ -36,6 +36,14 @@ func TestSMTPSubmission(t *testing.T) {
 			host, portText, _ := net.SplitHostPort(listener.Addr().String())
 			port, _ := strconv.Atoi(portText)
 			o := Options{Host: host, Port: port, User: "sender@example.com", Password: "dedicated-secret", To: []string{"接收者 <first@example.com>", "second@example.com"}, Subject: "你好 SMTP", Body: "测试正文\n.leading dot\n", Timeout: 3 * time.Second}
+			expectedRecipients := []string{"first@example.com", "second@example.com"}
+			switch mode {
+			case "quoted-space":
+				expectedRecipients[0] = `"first last"@example.com`
+			case "quoted-escape":
+				expectedRecipients[0] = `"first\"last\\name"@example.com`
+			}
+			o.To[0] = "接收者 <" + expectedRecipients[0] + ">"
 			received := make(chan []byte, 1)
 			finished := make(chan struct{})
 			go func() {
@@ -53,6 +61,7 @@ func TestSMTPSubmission(t *testing.T) {
 				}
 				c := textproto.NewConn(conn)
 				_ = c.PrintfLine("220 test SMTP")
+				recipientIndex := 0
 				for {
 					line, err := c.ReadLine()
 					if err != nil {
@@ -79,6 +88,10 @@ func TestSMTPSubmission(t *testing.T) {
 						}
 						_ = c.PrintfLine("250 ok")
 					case strings.HasPrefix(line, "RCPT TO:"):
+						if recipientIndex >= len(expectedRecipients) || line != "RCPT TO:<"+expectedRecipients[recipientIndex]+">" {
+							t.Errorf("unexpected recipient command: %q", line)
+						}
+						recipientIndex++
 						if mode == "recipient-rejected" && strings.Contains(line, "second@example.com") {
 							_ = c.PrintfLine("550 rejected")
 						} else {
@@ -118,7 +131,7 @@ func TestSMTPSubmission(t *testing.T) {
 				result, err = send(ctx, o, &tls.Config{RootCAs: roots, ServerName: host, MinVersion: tls.VersionTLS12})
 			}
 			<-finished
-			success := mode == "success" || mode == "quit-disconnect"
+			success := mode == "success" || mode == "quit-disconnect" || strings.HasPrefix(mode, "quoted-")
 			if success != (err == nil) {
 				t.Fatalf("unexpected success=%v error=%v", success, err)
 			}
@@ -140,6 +153,16 @@ func TestSMTPSubmission(t *testing.T) {
 			msg, err := mail.ReadMessage(bytes.NewReader(raw))
 			if err != nil {
 				t.Fatal(err)
+			}
+			to, err := msg.Header.AddressList("To")
+			wantTo, parseErr := mail.ParseAddressList(strings.Join(o.To, ","))
+			if err != nil || parseErr != nil || len(to) != len(wantTo) {
+				t.Fatalf("cannot parse recipient header: %v / %v", err, parseErr)
+			}
+			for i := range to {
+				if *to[i] != *wantTo[i] {
+					t.Fatalf("recipient header changed identity: got %v, want %v", to[i], wantTo[i])
+				}
 			}
 			subject, err := new(mime.WordDecoder).DecodeHeader(msg.Header.Get("Subject"))
 			if err != nil || subject != o.Subject {

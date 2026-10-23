@@ -195,7 +195,11 @@ func send(ctx context.Context, o Options, tlsConfig *tls.Config) (Result, error)
 		return Result{}, errors.New("SMTP sender rejected")
 	}
 	for _, a := range to {
-		if err := c.Rcpt(a.Address); err != nil {
+		// ParseAddress removes quoted-local-part syntax. Reconstruct it before
+		// net/smtp adds the envelope's angle brackets.
+		mailbox := (&mail.Address{Address: a.Address}).String()
+		mailbox = strings.TrimSuffix(strings.TrimPrefix(mailbox, "<"), ">")
+		if err := c.Rcpt(mailbox); err != nil {
 			return Result{}, errors.New("SMTP recipient rejected; message not submitted")
 		}
 	}
