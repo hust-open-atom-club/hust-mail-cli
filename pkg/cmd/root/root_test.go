@@ -145,7 +145,7 @@ func TestConfigPrecedence(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{"user":"config@example.com","password":"config-password","protocol":"imap","port":1993,"timeout":"2m","dir":"archive"}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"user":"config@example.com","password":"config-password","timeout":"2m","dir":"archive"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := NewCmdRoot(io.Discard, io.Discard)
@@ -156,14 +156,14 @@ func TestConfigPrecedence(t *testing.T) {
 	var got mailarchive.Options
 	sync.RunE = func(cmd *cobra.Command, args []string) error {
 		var err error
-		got, err = receiveOptions(cmd, mailarchive.Options{User: "flag@example.com", Port: 0})
+		got, err = receiveOptions(cmd, mailarchive.Options{User: "flag@example.com"})
 		return err
 	}
-	cmd.SetArgs([]string{"sync", "--user", "flag@example.com", "--port", "0"})
+	cmd.SetArgs([]string{"sync", "--user", "flag@example.com"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if got.User != "flag@example.com" || got.Password != "env-password" || got.Protocol != "imap" || got.Port != 0 || got.Timeout != 2*time.Minute || got.Dir != "archive" {
+	if got.User != "flag@example.com" || got.Password != "env-password" || got.Protocol != "imap" || got.Port != 993 || got.Host != "mail.hust.edu.cn" || got.Timeout != 2*time.Minute || got.Dir != "archive" {
 		t.Fatal("configuration precedence failed")
 	}
 	if err := os.Unsetenv("HUST_MAIL_USER"); err != nil {
@@ -260,7 +260,7 @@ func TestPOP3RejectedFromFlagsAndConfig(t *testing.T) {
 				}
 				cmd.SetArgs(args)
 				err := cmd.ExecuteContext(context.Background())
-				if err == nil || !strings.Contains(err.Error(), "POP3 is not supported") {
+				if err == nil || (source == "flag" && !strings.Contains(err.Error(), "unknown flag")) || (source == "config" && !strings.Contains(err.Error(), "removed config fields")) {
 					t.Fatalf("expected unsupported protocol error before credentials or network access; got %v", err)
 				}
 				if out.Len() != 0 || stderr.Len() != 0 {
@@ -280,7 +280,7 @@ func TestLegacyPOP3ArchiveRemainsReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(cfg, []byte(`{"protocol":"pop3","dir":`+strconv.Quote(dir)+`}`), 0600); err != nil {
+	if err := os.WriteFile(cfg, []byte(`{"dir":`+strconv.Quote(dir)+`}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{

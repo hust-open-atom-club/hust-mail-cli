@@ -20,7 +20,7 @@ func TestSendConfigFlagsStdinAndJSON(t *testing.T) {
 	t.Setenv("HUST_MAIL_USER", "env@example.com")
 	t.Setenv("HUST_MAIL_PASSWORD", "env-secret")
 	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte(`{"user":"config@example.com","password":"config-secret","host":"imap.example.com","port":993,"smtp":{"host":"smtp.example.com","port":1465},"timeout":"20s"}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"user":"config@example.com","password":"config-secret","timeout":"20s"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	for _, flags := range []bool{false, true} {
@@ -31,9 +31,9 @@ func TestSendConfigFlagsStdinAndJSON(t *testing.T) {
 		called := false
 		root.AddCommand(newSendCommandWithSender(func(ctx context.Context, o mailsend.Options) (mailsend.Result, error) {
 			called = true
-			user, host, port, timeout := "env@example.com", "smtp.example.com", 1465, 20*time.Second
+			user, host, port, timeout := "env@example.com", "mail.hust.edu.cn", 465, 20*time.Second
 			if flags {
-				user, host, port, timeout = "flag@example.com", "override.example.com", 2465, 3*time.Second
+				user, host, port, timeout = "flag@example.com", "mail.hust.edu.cn", 465, 3*time.Second
 			}
 			if o.User != user || o.Password != "env-secret" || o.Host != host || o.Port != port || o.Timeout != timeout || o.Body != "来自标准输入\n" || len(o.To) != 2 {
 				t.Fatalf("wrong send options (credentials omitted)")
@@ -43,7 +43,7 @@ func TestSendConfigFlagsStdinAndJSON(t *testing.T) {
 		root.SetIn(strings.NewReader("来自标准输入\n"))
 		args := []string{"--config", path, "--json", "send", "--to", "one@example.com", "--to", "two@example.com", "--subject", "测试", "--body-file", "-"}
 		if flags {
-			args = append(args, "--user", "flag@example.com", "--host", "override.example.com", "--port", "2465", "--timeout", "3s")
+			args = append(args, "--user", "flag@example.com", "--timeout", "3s")
 		}
 		root.SetArgs(args)
 		if err := root.Execute(); err != nil {

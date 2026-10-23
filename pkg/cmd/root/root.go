@@ -54,9 +54,6 @@ func newReceiveCommand(name, short string) *cobra.Command {
 	}
 	flags := cmd.Flags()
 	flags.StringVar(&opts.User, "user", "", "Full email address (overrides config and HUST_MAIL_USER)")
-	flags.StringVar(&opts.Host, "host", config.DefaultIMAPHost, "Mail server hostname")
-	flags.StringVar(&opts.Protocol, "protocol", "imap", "Receiving protocol: imap (read-only; only supported value)")
-	flags.IntVar(&opts.Port, "port", 0, "IMAP TLS port (default: 993)")
 	flags.DurationVar(&opts.Timeout, "timeout", 30*time.Minute, "Total connection and sync timeout; excludes password input")
 	if name == "sync" {
 		flags.BoolVar(&opts.RetryIgnored, "retry-ignored", false, "Retry IMAP messages previously recorded as unavailable")
@@ -92,16 +89,13 @@ func receiveOptions(cmd *cobra.Command, flags mailarchive.Options) (mailarchive.
 		target *string
 		value  string
 	}{
-		"user": {&cfg.User, flags.User}, "host": {&cfg.Host, flags.Host},
-		"protocol": {&cfg.Protocol, flags.Protocol}, "dir": {&cfg.Dir, flags.Dir},
+		"user":    {&cfg.User, flags.User},
+		"dir":     {&cfg.Dir, flags.Dir},
 		"mailbox": {&cfg.Mailbox, flags.Mailbox},
 	} {
 		if cmd.Flags().Changed(name) {
 			*values.target = values.value
 		}
-	}
-	if cmd.Flags().Changed("port") {
-		cfg.Port = flags.Port
 	}
 	if cmd.Flags().Changed("days") {
 		cfg.Days = flags.Days
@@ -117,8 +111,8 @@ func receiveOptions(cmd *cobra.Command, flags mailarchive.Options) (mailarchive.
 	if err != nil {
 		return mailarchive.Options{}, err
 	}
-	return mailarchive.Options{User: cfg.User, Password: cfg.Password, Host: cfg.Host,
-		Protocol: cfg.Protocol, Port: cfg.Port, Dir: archiveDir, Mailbox: cfg.Mailbox, Timeout: timeout, Days: cfg.Days, JSON: jsonOutput(cmd), Quiet: flags.Quiet, RetryIgnored: flags.RetryIgnored}, nil
+	return mailarchive.Options{User: cfg.User, Password: cfg.Password, Host: config.MailHost,
+		Protocol: "imap", Port: config.IMAPPort, Dir: archiveDir, Mailbox: cfg.Mailbox, Timeout: timeout, Days: cfg.Days, JSON: jsonOutput(cmd), Quiet: flags.Quiet, RetryIgnored: flags.RetryIgnored}, nil
 }
 
 func jsonOutput(cmd *cobra.Command) bool {
