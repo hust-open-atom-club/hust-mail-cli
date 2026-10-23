@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/hust-open-atom-club/hust-mail-cli/internal/mailsend"
@@ -76,13 +78,8 @@ func newSendCommandWithSender(send func(context.Context, mailsend.Options) (mail
 		if err != nil {
 			return err
 		}
-		if jsonOutput(cmd) {
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetEscapeHTML(false)
-			return enc.Encode(result)
-		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Submitted to SMTP server: recipients=%d message_id=%s (delivery not confirmed)\n", result.Recipients, result.MessageID)
-		return err
+		reportSendResult(cmd, result)
+		return nil
 	}
 	f := cmd.Flags()
 	f.StringArrayVar(&o.To, "to", nil, "Recipient address or address list; repeat for multiple recipients")
@@ -96,6 +93,28 @@ func newSendCommandWithSender(send func(context.Context, mailsend.Options) (mail
 	_ = cmd.MarkFlagRequired("to")
 	_ = cmd.MarkFlagRequired("subject")
 	return cmd
+}
+
+func reportSendResult(cmd *cobra.Command, result mailsend.Result) {
+	// Go otherwise terminates the process on EPIPE from stdout/stderr. Once
+	// DATA has been accepted, even a closed output pipe must preserve success.
+	// Register only around reporting, preserving any other signal listeners.
+	pipeSignals := make(chan os.Signal, 1)
+	signal.Notify(pipeSignals, syscall.SIGPIPE)
+	defer signal.Stop(pipeSignals)
+	var err error
+	if jsonOutput(cmd) {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetEscapeHTML(false)
+		err = enc.Encode(result)
+	} else {
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Submitted to SMTP server: recipients=%d message_id=%s (delivery not confirmed)\n", result.Recipients, result.MessageID)
+	}
+	if err != nil {
+		// Do not let reporting failures encourage a duplicate submission. Avoid
+		// echoing arbitrary writer error strings; stderr is best-effort too.
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: SMTP server already accepted message %s; could not write submission result; do not resend automatically\n", result.MessageID)
+	}
 }
 
 func readSendBody(ctx context.Context, r io.Reader) ([]byte, error) {

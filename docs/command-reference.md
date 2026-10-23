@@ -300,3 +300,5 @@ printf '你好\n' | hust-mail-cli send --to recipient@example.com --subject "测
 `--user`、`--host`、`--port` 和 `--timeout` 的优先级见[SMTP 配置](configuration.md#smtp-发信配置)。SMTP 默认地址为 `mail.hust.edu.cn:465`，专用密码必须在配置或环境变量中提供，不支持密码命令行参数或禁用 TLS 校验。
 
 成功输出表示服务器在 DATA 结束后接受提交，**不代表最终投递成功**。`--json` 输出 `{"status":"submitted","message_id":"<...>","recipients":1}`。如果任意收件人被拒，客户端不会提交正文，不做部分收件人发送。发送过程中失败返回非零；提交结果不确定时请先核查邮箱，避免重复发送。客户端不会自动重试，也不通过 IMAP 保存副本到已发送文件夹。
+
+SMTP 服务器接受邮件后，即使 JSON 或文本结果输出失败（例如输出文件已满或下游管道关闭），`send` 仍保持成功退出，并尽力向 stderr 提示邮件已被接受及 Message-ID。此时不要因为缺少标准输出而自动重发；stderr 也不可写时仍保留提交成功状态。
