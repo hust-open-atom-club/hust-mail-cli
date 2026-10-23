@@ -158,7 +158,7 @@ func validateOptions(mode string, opts *Options) error {
 		return errors.New("--days/config days must be between 0 and 36500 (0 means all time)")
 	}
 	if opts.Protocol != "imap" {
-		return errors.New("--protocol/config protocol must be imap; POP3 is not supported and SMTP sending is not implemented")
+		return errors.New("--protocol/config protocol must be imap; POP3 is not supported; use the send command for SMTP sending")
 	}
 	if opts.Port == 0 {
 		opts.Port = 993
