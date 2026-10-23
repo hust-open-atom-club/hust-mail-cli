@@ -42,7 +42,7 @@ chmod 700 ~/.config/hust-mail-cli
 chmod 600 ~/.config/hust-mail-cli/config.json
 ```
 
-填写 `user`（完整邮箱）和 `password`（专用密码）即可，服务器已预填。默认归档目录为 `~/HUST-Mail/`，模板默认只下载近 7 天邮件，不自动删除旧归档。字段、覆盖规则及安全说明见[配置指南](docs/configuration.md)。
+模板仅包含 `user`（完整邮箱）、`password`（专用密码）和 `dir`（归档目录）。连接固定使用 `mail.hust.edu.cn` 的 IMAP 993 / SMTP 465，不提供协议、服务器或端口覆盖；默认归档到 `~/HUST-Mail/`，同步所有文件夹和全部历史邮件，不自动删除旧归档。可用 `--days 7` 限制新增下载范围；可选字段和覆盖规则见[配置指南](docs/configuration.md)。
 
 ## 使用
 

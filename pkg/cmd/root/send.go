@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hust-open-atom-club/hust-mail-cli/internal/config"
 	"github.com/hust-open-atom-club/hust-mail-cli/internal/mailsend"
 	"github.com/spf13/cobra"
 )
@@ -32,7 +33,7 @@ func newSendCommandWithSender(send func(context.Context, mailsend.Options) (mail
 			return err
 		}
 		resolved := o
-		resolved.User, resolved.Password, resolved.Host, resolved.Port = cfg.User, cfg.Password, cfg.SMTP.Host, cfg.SMTP.Port
+		resolved.User, resolved.Password, resolved.Host, resolved.Port = cfg.User, cfg.Password, config.MailHost, config.SMTPPort
 		if v, ok := os.LookupEnv("HUST_MAIL_USER"); ok {
 			resolved.User = v
 		}
@@ -41,12 +42,6 @@ func newSendCommandWithSender(send func(context.Context, mailsend.Options) (mail
 		}
 		if cmd.Flags().Changed("user") {
 			resolved.User = o.User
-		}
-		if cmd.Flags().Changed("host") {
-			resolved.Host = o.Host
-		}
-		if cmd.Flags().Changed("port") {
-			resolved.Port = o.Port
 		}
 		if cmd.Flags().Changed("timeout") {
 			cfg.Timeout = o.Timeout.String()
@@ -87,8 +82,6 @@ func newSendCommandWithSender(send func(context.Context, mailsend.Options) (mail
 	f.StringVar(&o.Body, "body", "", "Plain-text UTF-8 body")
 	f.StringVar(&file, "body-file", "", "Read UTF-8 body from a file, or - for stdin (maximum 10 MiB)")
 	f.StringVar(&o.User, "user", "", "Sender/login address (overrides config and HUST_MAIL_USER)")
-	f.StringVar(&o.Host, "host", "", "SMTP implicit-TLS hostname (overrides smtp.host)")
-	f.IntVar(&o.Port, "port", 465, "SMTP implicit-TLS port (overrides smtp.port)")
 	f.DurationVar(&o.Timeout, "timeout", 30*time.Minute, "Total SMTP connection and submission timeout")
 	_ = cmd.MarkFlagRequired("to")
 	_ = cmd.MarkFlagRequired("subject")

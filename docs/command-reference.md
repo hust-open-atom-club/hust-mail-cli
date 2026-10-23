@@ -17,6 +17,8 @@
 
 `--config /path/to/config.json` 指定配置文件，默认路径为 `~/.config/hust-mail-cli/config.json`。需要配置的命令遵循显式参数、支持的环境变量、配置文件、内置默认值的优先级。帮助、补全、`read` 和附件命令不读取账号配置；`list`、`search` 从配置解析归档目录，但不连接邮箱。
 
+精简配置只需 `user`、`password`、`dir`；IMAP/SMTP 固定连接 `mail.hust.edu.cn` 的 993/465 端口并验证 TLS。默认同步所有可读取文件夹和全部历史邮件；`days`、`mailbox`、`timeout` 可按需填写或通过相应参数覆盖。旧版配置中的连接字段需删除，详见[可选配置](configuration.md#可选配置)。
+
 `--json` 是全局选项，可放在命令前后，包括 `attachments` 的子命令。业务命令的结果输出为 JSON Lines（每行一个 JSON 对象），方便管道处理；进度、警告和错误写入标准错误。帮助与 shell 补全仍输出原有文本/脚本。失败时退出码非零；没有结果的列表可以没有输出。
 
 ```sh
@@ -48,11 +50,11 @@ hust-mail-cli sync --days 0
 | --- | --- | --- |
 | `--mailbox` | 所有可读取文件夹 | 指定一个 IMAP 文件夹；名称可先用 `folders` 查询 |
 | `--dir` | `~/HUST-Mail/` | 本地归档目录，支持开头的 `~/` 展开 |
-| `--days` | `0`，不限时间 | 新增下载的时间范围，可由配置覆盖；示例配置为 `7` |
+| `--days` | `0`，不限时间 | 新增下载的时间范围，可由配置覆盖；精简示例省略此项，使用默认值 `0` |
 | `--quiet` | `false` | 关闭实时进度，保留文件夹汇总、警告和错误 |
 | `--retry-ignored` | `false` | 重试此前记录为正文不可用的 IMAP 邮件 |
 
-连接选项 `--user`、`--host`、`--protocol`、`--port`、`--timeout` 和全局 `--config` 见[配置指南](configuration.md)。显式参数覆盖配置。
+连接选项 `--user`、`--timeout` 和全局 `--config` 见[配置指南](configuration.md)。显式参数覆盖配置。
 
 ### 时间范围
 
@@ -128,7 +130,7 @@ hust-mail-cli folders --config /path/to/config.json
 hust-mail-cli sync --mailbox INBOX
 ```
 
-支持 `--user`、`--host`、`--protocol`、`--port` 和 `--timeout`；连接与凭据规则见[配置指南](configuration.md)。此命令仅适用于 IMAP，不下载正文，不修改远端邮件，也不创建本地归档。
+支持 `--user` 和 `--timeout`；连接与凭据规则见[配置指南](configuration.md)。此命令仅适用于 IMAP，不下载正文，不修改远端邮件，也不创建本地归档。
 
 ## list 列出本地邮件
 
@@ -297,7 +299,7 @@ printf '你好\n' | hust-mail-cli send --to recipient@example.com --subject "测
 
 `--to` 和 `--subject` 必须显式提供；`--to` 可重复，也可传入一组带逗号的地址。`--body` 与 `--body-file` 必须且只能选一个；`--body-file -` 读取标准输入，正文上限为 10 MiB。正文为 UTF-8 纯文本，自动生成 MIME、Date 和 Message-ID，采用 quoted-printable 传输编码。暂不支持 HTML、附件、抄送、密送、回复或转发；信封地址仅支持 ASCII，收件人显示名称及主题支持中文。
 
-`--user`、`--host`、`--port` 和 `--timeout` 的优先级见[SMTP 配置](configuration.md#smtp-发信配置)。SMTP 默认地址为 `mail.hust.edu.cn:465`，专用密码必须在配置或环境变量中提供，不支持密码命令行参数或禁用 TLS 校验。
+`--user` 和 `--timeout` 的优先级见[SMTP 配置](configuration.md#smtp-发信配置)。SMTP 固定地址为 `mail.hust.edu.cn:465`，专用密码必须在配置或环境变量中提供，不支持密码命令行参数或禁用 TLS 校验。
 
 成功输出表示服务器在 DATA 结束后接受提交，**不代表最终投递成功**。`--json` 输出 `{"status":"submitted","message_id":"<...>","recipients":1}`。如果任意收件人被拒，客户端不会提交正文，不做部分收件人发送。发送过程中失败返回非零；提交结果不确定时请先核查邮箱，避免重复发送。客户端不会自动重试，也不通过 IMAP 保存副本到已发送文件夹。
 

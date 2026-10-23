@@ -50,4 +50,12 @@ History currently contains only `Initial commit`, so no established commit conve
 
 Default configuration is `~/.config/hust-mail-cli/config.json`, including on macOS. Precedence is explicit flags, supported environment variables, configuration, then defaults. Keep credential files at `0600`; never commit passwords or real `.eml` files. Preserve verified TLS, IMAP `EXAMINE`/`BODY.PEEK[]`, and atomic archive writes.
 
+### Minimal Configuration Contract
+
+Keep `config.example.json` and quick-start examples limited to `user`, `password`, and `dir`. Built-in defaults provide IMAP receiving at `mail.hust.edu.cn:993` and SMTP submission at `mail.hust.edu.cn:465`. Both require verified implicit TLS (minimum TLS 1.2); do not add plaintext fallback, certificate bypasses, or infer STARTTLS from a port number. SMTP reuses the same account and dedicated password; loading configuration must never send mail.
+
+Omitted `dir` defaults to `~/HUST-Mail/`; omitted `days` defaults to `0` (all history), `mailbox` to empty (all selectable IMAP folders), and `timeout` to `30m`. `mailbox` names a folder such as `INBOX`, not an account address. Keep these fields optional, with explicit flags taking precedence. Resolve overrides before validating the effective value.
+
+This is a HUST-only tool: expose no `protocol`, `host`, `port`, or `smtp` configuration fields and no `--protocol`, `--host`, or `--port` flags. Reject removed fields with actionable migration errors that name only the known fields, never their values. Do not silently accept legacy connection overrides. Keep `days`, `mailbox`, and `timeout` optional; preserve supported account environment overrides. Do not rewrite user credential files automatically. Keep fixed endpoints, minimal examples, command help, and documentation consistent, and test rejected legacy settings as well as inherited defaults.
+
 `days`/`--days` limits new IMAP downloads by server `INTERNALDATE`, with zero meaning all time. Preserve explicit zero flag overrides and exact cutoff checks after coarse date searches. Do not automatically delete archived mail or treat sender-provided dates as receive timestamps.

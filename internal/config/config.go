@@ -11,14 +11,11 @@ import (
 )
 
 const DefaultArchiveDir = "~/HUST-Mail/"
-const DefaultIMAPHost = "mail.hust.edu.cn"
 
-// SMTPConfig configures authenticated implicit-TLS SMTP submission.
-// Loading these settings never opens an SMTP connection.
-type SMTPConfig struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
-}
+// HUST transport endpoints are fixed and are not user configuration.
+const MailHost = "mail.hust.edu.cn"
+const IMAPPort = 993
+const SMTPPort = 465
 
 // ExpandDir resolves a leading ~/ after configuration and flag overrides.
 // Relative paths remain relative to the command's working directory.
@@ -37,24 +34,19 @@ func ExpandDir(path string) (string, error) {
 }
 
 type Config struct {
-	User     string     `json:"user"`
-	Password string     `json:"password"`
-	Host     string     `json:"host"`
-	Protocol string     `json:"protocol"`
-	Port     int        `json:"port"`
-	Dir      string     `json:"dir"`
-	Mailbox  string     `json:"mailbox"`
-	Days     int        `json:"days"`
-	Timeout  string     `json:"timeout"`
-	SMTP     SMTPConfig `json:"smtp"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Dir      string `json:"dir"`
+	Mailbox  string `json:"mailbox"`
+	Days     int    `json:"days"`
+	Timeout  string `json:"timeout"`
 }
 
 // Load reads ~/.config explicitly, including on macOS where UserConfigDir
 // would otherwise select ~/Library/Application Support.
 // A missing default file is allowed; a missing explicit file is an error.
 func Load(path string) (Config, error) {
-	cfg := Config{Host: DefaultIMAPHost, Protocol: "imap", Dir: DefaultArchiveDir, Timeout: "30m",
-		SMTP: SMTPConfig{Host: "mail.hust.edu.cn", Port: 465}}
+	cfg := Config{Dir: DefaultArchiveDir, Timeout: "30m"}
 	explicit := path != ""
 	if !explicit {
 		home, err := os.UserHomeDir()
@@ -72,14 +64,36 @@ func Load(path string) (Config, error) {
 	}
 	defer f.Close()
 	dec := json.NewDecoder(f)
-	dec.DisallowUnknownFields()
-	// Do not include decoder errors: they can quote secret field values.
-	parsed := &cfg
-	if err := dec.Decode(&parsed); err != nil || parsed == nil {
+	// Decode errors can quote credentials; never include their original text.
+	var raw json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
 		return Config{}, errors.New("invalid config JSON or unknown field")
 	}
 	if err := dec.Decode(new(any)); err != io.EOF {
 		return Config{}, errors.New("config must contain one JSON object")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return Config{}, errors.New("invalid config JSON or unknown field")
+	}
+	var removed []string
+	for _, key := range []string{"protocol", "host", "port", "smtp"} {
+		if _, exists := fields[key]; exists {
+			removed = append(removed, key)
+		}
+	}
+	if len(removed) > 0 {
+		return Config{}, fmt.Errorf("removed config fields: %s; delete these fields: HUST IMAP and SMTP use fixed TLS endpoints", strings.Join(removed, ", "))
+	}
+	for key := range fields {
+		switch key {
+		case "user", "password", "dir", "mailbox", "days", "timeout":
+		default:
+			return Config{}, errors.New("invalid config JSON or unknown field")
+		}
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return Config{}, errors.New("invalid config JSON or unknown field")
 	}
 	if cfg.Password != "" {
 		// Inspect the opened descriptor, rather than re-statting the path.

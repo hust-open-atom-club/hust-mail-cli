@@ -8,21 +8,11 @@
 {
   "user": "你的邮箱@hust.edu.cn",
   "password": "你生成的专用密码",
-  "protocol": "imap",
-  "host": "mail.hust.edu.cn",
-  "port": 993,
-  "smtp": {
-    "host": "mail.hust.edu.cn",
-    "port": 465
-  },
-  "dir": "~/HUST-Mail/",
-  "mailbox": "",
-  "days": 7,
-  "timeout": "30m"
+  "dir": "~/HUST-Mail/"
 }
 ```
 
-服务器已预填为 IMAP `mail.hust.edu.cn:993` 和 SMTP `mail.hust.edu.cn:465`，均使用隐式 TLS（SSL）。只需填写 `user`（完整邮箱地址）和 `password`（网页端生成的专用密码）。`send` 使用 `smtp.host` / `smtp.port` 连接 SMTP，复用 `user` 和 `password`；加载配置本身不会连接或发信。
+程序内置 IMAP `mail.hust.edu.cn:993` 和 SMTP `mail.hust.edu.cn:465`，均使用隐式 TLS（SSL）。只需填写 `user`（完整邮箱地址）和 `password`（网页端生成的专用密码）。`send` 复用同一账号和专用密码；加载配置本身不会连接或发信。
 
 可从仓库中的 `config.example.json` 复制后填写：
 
@@ -41,7 +31,19 @@ hust-mail-cli sync
 hust-mail-cli list
 ```
 
-字段均可省略。收信默认主机为 `mail.hust.edu.cn`；`protocol` 仅接受 `imap`，`port: 0` 或省略时使用 IMAP TLS 端口 993。`mailbox` 留空表示所有可读取的 IMAP 文件夹。`timeout` 使用 `30m`、`60s` 等时长格式。默认归档目录为 `~/HUST-Mail/`，不受命令运行目录影响，适用于安装在系统目录中的命令。配置及 `--dir` 均支持开头的 `~/` 展开；相对路径仍相对于运行命令时的工作目录。已有配置中的 `dir` 会继续生效，需要使用新位置时请将其改为 `~/HUST-Mail/`。
+## 可选配置
+
+使用上面的精简配置时，默认同步所有可读取文件夹的全部历史邮件，连接和提交超时为 30 分钟。以下字段仅在需要改变默认行为时填写：
+
+| 字段 | 默认值 | 用途 |
+| --- | --- | --- |
+| `days` | `0` | 限制新增同步的时间范围，`0` 表示不限时间 |
+| `mailbox` | 空 | 指定单个 IMAP 文件夹，空表示所有可读取文件夹 |
+| `timeout` | `"30m"` | 连接和操作的总超时 |
+
+也可以使用 `--days`、`--mailbox` 和 `--timeout` 临时覆盖。仅支持 `user`、`password`、`dir`、`days`、`mailbox`、`timeout` 六个配置字段。旧配置必须删除 `protocol`、`host`、`port` 和整个 `smtp` 对象；这些字段即使填写原默认值也会报错。
+
+字段均可省略。收信固定使用只读 IMAP 和 `mail.hust.edu.cn:993`。`mailbox` 留空表示所有可读取的 IMAP 文件夹。`timeout` 使用 `30m`、`60s` 等时长格式。默认归档目录为 `~/HUST-Mail/`，不受命令运行目录影响，适用于安装在系统目录中的命令。配置及 `--dir` 均支持开头的 `~/` 展开；相对路径仍相对于运行命令时的工作目录。已有配置中的 `dir` 会继续生效，需要使用新位置时请将其改为 `~/HUST-Mail/`。
 
 `days` 控制下载的时间范围：`7` 表示本次同步启动前最近 7×24 小时，`0` 或省略表示不限时间，允许值为 0–36500。时间范围基于 IMAP 服务端的 `INTERNALDATE`（收信时间），而非邮件 `Date` 字段；按精确时间过滤，缺失收信时间时会报错。服务端日期搜索会适当放宽候选范围，再用收信时间核验，避免时区边界漏信。
 
@@ -65,9 +67,6 @@ CLI 不提供密码命令行参数，不输出密码，也不会把密码写入�
 | 参数 | 内置默认值 | 说明 |
 | --- | --- | --- |
 | `--user` | 空 | 完整邮箱地址，也可通过 `HUST_MAIL_USER` 或配置提供 |
-| `--host` | `mail.hust.edu.cn` | 只填主机名，不含协议前缀或端口 |
-| `--protocol` | `imap` | 仅接受 `imap` |
-| `--port` | `0` | 使用 IMAP TLS 端口 993 |
 | `--timeout` | `30m` | 连接、认证和同步的总时限 |
 | `--config` | `~/.config/hust-mail-cli/config.json` | 指定配置文件的全局选项 |
 
@@ -75,7 +74,7 @@ CLI 不提供密码命令行参数，不输出密码，也不会把密码写入�
 
 ## 连接与只读行为
 
-默认使用 `mail.hust.edu.cn:993` 收信，使用 `mail.hust.edu.cn:465` 发信。可通过 `--host`、`--port` 覆盖收信地址。只支持隐式 TLS，验证服务器证书，最低 TLS 1.2。已有配置中的主机会继续生效；若旧配置的收信主机无法解析，需手动将 `host` 改为 `mail.hust.edu.cn`。更换主机会生成独立账号归档目录，保留旧归档，可能重复下载。
+固定使用 `mail.hust.edu.cn:993` 收信、`mail.hust.edu.cn:465` 发信，不提供服务器、协议或端口覆盖参数。只支持隐式 TLS，验证服务器证书，最低 TLS 1.2。原配置若已经使用这些连接设置，删除旧字段不会改变归档账号标识；曾使用其他主机或协议的归档仍会保留，但固定连接可能使用不同账号目录，导致重新下载。
 
 - IMAP 使用 `EXAMINE` 只读选择文件夹，使用 `BODY.PEEK[]` 读取，不标记已读，不修改标志，不执行删除、清除或上传命令。
 - `send` 仅提供 SMTP 纯文本发送；暂不提供附件发送、回复、转发或 IMAP 写入。
@@ -86,6 +85,10 @@ CLI 不提供密码命令行参数，不输出密码，也不会把密码写入�
 
 ## SMTP 发信配置
 
-`send` 使用独立的 `smtp.host`（默认 `mail.hust.edu.cn`）和 `smtp.port`（默认 `465`），与 IMAP 地址独立。使用隐式 TLS、系统信任库和最低 TLS 1.2，不支持明文、跳过证书校验或 STARTTLS。旧配置中显式设置的 SMTP 地址会保留；若旧地址无法解析，请手动将 `smtp.host` 改成 `mail.hust.edu.cn`。
+`send` 固定连接 `mail.hust.edu.cn:465`，无需 SMTP 配置对象。使用隐式 TLS、系统信任库和最低 TLS 1.2，不支持明文、跳过证书校验或 STARTTLS。
 
-账号和专用密码沿用配置的 `user`、`password`，支持 `HUST_MAIL_USER`、`HUST_MAIL_PASSWORD` 覆盖，`--user` 优先。`send` 不交互读取密码，未配置密码时报错。`--host` / `--port` 仅覆盖该次 SMTP 连接；`--timeout` 覆盖配置的总连接和提交超时。具体用法见[发信命令](command-reference.md#send-发送纯文本邮件)。
+账号和专用密码沿用配置的 `user`、`password`，支持 `HUST_MAIL_USER`、`HUST_MAIL_PASSWORD` 覆盖，`--user` 优先。`send` 不交互读取密码，未配置密码时报错。`--timeout` 覆盖配置的总连接和提交超时。具体用法见[发信命令](command-reference.md#send-发送纯文本邮件)。
+
+## 旧配置迁移
+
+从现有 JSON 中删除顶层 `protocol`、`host`、`port`、`smtp` 四个字段，保留账号、专用密码、归档目录和需要的可选字段。停止使用 `--protocol`、`--host`、`--port`。CLI 会拒绝旧字段及未知参数，不会自动修改配置文件，也不会修改已有邮件。

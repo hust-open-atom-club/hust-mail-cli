@@ -11,18 +11,18 @@ func TestLoadDefaultsAndConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	cfg, err := Load("")
-	if err != nil || cfg.Host != DefaultIMAPHost || cfg.Protocol != "imap" || cfg.SMTP.Host != "mail.hust.edu.cn" || cfg.SMTP.Port != 465 || cfg.Timeout != "30m" || cfg.Dir != "~/HUST-Mail/" {
+	if err != nil || cfg.Timeout != "30m" || cfg.Dir != "~/HUST-Mail/" {
 		t.Fatal("default config failed")
 	}
 	path := filepath.Join(home, ".config", "hust-mail-cli", "config.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{"user":"test@hust.edu.cn","password":"dedicated","port":1993,"protocol":"imap"}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"user":"test@hust.edu.cn","password":"dedicated","days":7}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err = Load("")
-	if err != nil || cfg.Password != "dedicated" || cfg.User != "test@hust.edu.cn" || cfg.Port != 1993 || cfg.Protocol != "imap" {
+	if err != nil || cfg.Password != "dedicated" || cfg.User != "test@hust.edu.cn" || cfg.Days != 7 {
 		t.Fatal("config not loaded")
 	}
 	if _, err := Load(filepath.Join(home, "missing.json")); err == nil {
@@ -30,7 +30,7 @@ func TestLoadDefaultsAndConfig(t *testing.T) {
 	}
 }
 
-func TestExampleServerSettings(t *testing.T) {
+func TestMinimalExampleUsesDefaultSettings(t *testing.T) {
 	raw, err := os.ReadFile("../../config.example.json")
 	if err != nil {
 		t.Fatal(err)
@@ -43,8 +43,8 @@ func TestExampleServerSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Protocol != "imap" || cfg.Host != "mail.hust.edu.cn" || cfg.Port != 993 || cfg.SMTP.Host != "mail.hust.edu.cn" || cfg.SMTP.Port != 465 {
-		t.Fatal("example must prefill HUST TLS servers")
+	if cfg.Dir != DefaultArchiveDir || cfg.Days != 0 || cfg.Mailbox != "" || cfg.Timeout != "30m" {
+		t.Fatal("minimal example must sync all folders and history using default timeout")
 	}
 }
 
@@ -121,5 +121,19 @@ func TestCredentialFilePermissions(t *testing.T) {
 				t.Fatal("missing permission repair instructions")
 			}
 		})
+	}
+}
+
+func TestRemovedConnectionFieldsRequireMigration(t *testing.T) {
+	for _, key := range []string{"protocol", "host", "port", "smtp"} {
+		path := filepath.Join(t.TempDir(), "config.json")
+		raw := `{"` + key + `":"secret-marker"}`
+		if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(path)
+		if err == nil || !strings.Contains(err.Error(), "removed config fields: "+key) || !strings.Contains(err.Error(), "delete") || strings.Contains(err.Error(), "secret-marker") {
+			t.Fatalf("unsafe or missing migration error for %s: %v", key, err)
+		}
 	}
 }
