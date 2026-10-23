@@ -42,7 +42,7 @@ hust-mail-cli sync --retry-ignored --days 0
 
 ## 旧配置中的 POP3
 
-CLI 不再支持 POP3。若旧配置设置了 `protocol: "pop3"`，请改为 `protocol: "imap"`、`host: "imap.hust.edu.cn"`、`port: 993`，并确认专用密码已启用 IMAP 权限。`--protocol pop3` 同样会报错，不会连接服务器。已有本地 `.eml` 归档仍可读取和搜索，不会被删除；切换为 IMAP 后使用独立账号归档，可能重新下载相同邮件。
+CLI 不再支持 POP3。若旧配置设置了 `protocol: "pop3"`，请改为 `protocol: "imap"`、`host: "mail.hust.edu.cn"`、`port: 993`，并确认专用密码已启用 IMAP 权限。`--protocol pop3` 同样会报错，不会连接服务器。已有本地 `.eml` 归档仍可读取和搜索，不会被删除；切换为 IMAP 后使用独立账号归档，可能重新下载相同邮件。
 
 ## 正文无法解码或超过限制
 

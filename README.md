@@ -1,6 +1,6 @@
 # hust-mail-cli
 
-Go 编写的华中科技大学邮箱 CLI，使用 Cobra 组织命令。默认通过只读 IMAP 收信，支持本地增量归档、搜索、正文展示和附件导出。
+Go 编写的华中科技大学邮箱 CLI，使用 Cobra 组织命令。默认通过只读 IMAP 收信，支持本地增量归档、搜索、正文展示、附件导出，以及 SMTP 纯文本发信。
 
 ## 功能
 
@@ -14,7 +14,11 @@ Go 编写的华中科技大学邮箱 CLI，使用 Cobra 组织命令。默认通
 
 业务命令均支持全局 `--json`，便于脚本处理，详见[命令参考](docs/command-reference.md#通用选项与配置)。
 
-不修改远端邮件或已读状态。SMTP 仅预留配置，暂不支持发送、回复或转发。
+IMAP 不修改远端邮件或已读状态。`send` 可通过 SMTP 发送纯文本邮件；暂不支持附件发送、回复或转发。
+
+```sh
+hust-mail-cli send --to recipient@example.com --subject "测试" --body "你好"
+```
 
 ## 安装
 

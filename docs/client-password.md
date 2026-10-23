@@ -59,8 +59,8 @@ chmod 600 ~/.config/hust-mail-cli/config.json
 
 | 用途 | 主机 | TLS 端口 | 当前行为 |
 | --- | --- | --- | --- |
-| IMAP 收信 | `imap.hust.edu.cn` | `993` | 只读收信，不修改已读状态或删除远端邮件 |
-| SMTP 发信 | `smtp.hust.edu.cn` | `465` | 仅预留配置，尚未实现发信 |
+| IMAP 收信 | `mail.hust.edu.cn` | `993` | 只读收信，不修改已读状态或删除远端邮件 |
+| SMTP 发信 | `mail.hust.edu.cn` | `465` | `send` 使用专用密码认证发送 |
 
 安装 CLI 后，可列出文件夹验证连接：
 

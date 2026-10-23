@@ -11,9 +11,9 @@ import (
 )
 
 const DefaultArchiveDir = "~/HUST-Mail/"
-const DefaultIMAPHost = "imap.hust.edu.cn"
+const DefaultIMAPHost = "mail.hust.edu.cn"
 
-// SMTPConfig reserves implicit-TLS connection settings for future sending support.
+// SMTPConfig configures authenticated implicit-TLS SMTP submission.
 // Loading these settings never opens an SMTP connection.
 type SMTPConfig struct {
 	Host string `json:"host"`
@@ -54,7 +54,7 @@ type Config struct {
 // A missing default file is allowed; a missing explicit file is an error.
 func Load(path string) (Config, error) {
 	cfg := Config{Host: DefaultIMAPHost, Protocol: "imap", Dir: DefaultArchiveDir, Timeout: "30m",
-		SMTP: SMTPConfig{Host: "smtp.hust.edu.cn", Port: 465}}
+		SMTP: SMTPConfig{Host: "mail.hust.edu.cn", Port: 465}}
 	explicit := path != ""
 	if !explicit {
 		home, err := os.UserHomeDir()
