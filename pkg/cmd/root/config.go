@@ -24,7 +24,7 @@ func newConfigCommandWithPrompt(prompt configPrompt) *cobra.Command {
 	init := &cobra.Command{Use: "init", Short: "Interactively create a private config without overwriting an existing file", Args: cobra.NoArgs}
 	init.RunE = func(cmd *cobra.Command, args []string) error {
 		path, _ := cmd.Flags().GetString("config")
-		path, err := config.InitPath(path)
+		path, err := config.ResolvePath(path)
 		if err != nil {
 			return err
 		}

@@ -48,12 +48,9 @@ type Config struct {
 func Load(path string) (Config, error) {
 	cfg := Config{Dir: DefaultArchiveDir, Timeout: "30m"}
 	explicit := path != ""
-	if !explicit {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return cfg, err
-		}
-		path = filepath.Join(home, ".config", "hust-mail-cli", "config.json")
+	path, err := ResolvePath(path)
+	if err != nil {
+		return cfg, err
 	}
 	f, err := os.Open(path)
 	if !explicit && errors.Is(err, os.ErrNotExist) {

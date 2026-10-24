@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -53,5 +54,30 @@ func TestCreateDoesNotFollowTargetSymlink(t *testing.T) {
 	data, _ := os.ReadFile(target)
 	if string(data) != "preserve" {
 		t.Fatal("modified symlink target")
+	}
+}
+
+func TestInitializedPathsCanBeLoadedWithSameArgument(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, arg := range []string{"", "~/custom-mail/config.json", filepath.Join(t.TempDir(), "config.json")} {
+		path, err := ResolvePath(arg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := Config{User: "test@hust.edu.cn", Password: "test-only-secret", Dir: DefaultArchiveDir}
+		if err := Create(path, want); err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := Load(arg)
+		if err != nil {
+			t.Fatalf("cannot load initialized path %q: %v", arg, err)
+		}
+		if loaded.User != want.User || loaded.Password != want.Password || loaded.Dir != want.Dir {
+			t.Fatalf("configuration did not round trip for %q", arg)
+		}
+	}
+	if _, err := Load("~/missing-config.json"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing explicit config must remain an error: %v", err)
 	}
 }

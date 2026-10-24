@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 )
 
-// InitPath resolves the same default location as Load, without reading credentials.
-func InitPath(path string) (string, error) {
+// ResolvePath expands a leading ~/ or returns the default config location.
+// Both initialization and loading use it so explicit paths have identical meaning.
+func ResolvePath(path string) (string, error) {
 	if path != "" {
 		return ExpandDir(path)
 	}
