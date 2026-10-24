@@ -30,3 +30,9 @@ go test ./internal/mailarchive -run '^$' -bench BenchmarkSearchCacheLookup -benc
 ```
 
 该基准用同一组 1,024 条合成缓存记录对比旧版逐文件 JSON 和单文件数据库读取，包含源文件校验；它不代表真实归档的整体查询耗时。
+
+## 命令描述元数据
+
+`internal/commandschema` 遍历 Cobra 注册信息，`pkg/cmd/root/schema.go` 仅负责输出。新增命令时在其构造函数旁使用 `commandschema.Annotate` 补充位置参数、输出、网络/配置访问、交互要求和副作用；不要维护第二份命令清单。标记的约束必须与实际处理逻辑一致，不能把未描述行为默认视为安全。
+
+`schema` 不能加载配置或调用命令的校验、补全、hooks、`Run` / `RunE`；参数默认值读取 `DefValue`，不读取当前 `Value`。命令路径、参数和约束组输出排序稳定，新增不兼容的描述格式时递增 `FormatVersion` 并更新测试和命令参考。

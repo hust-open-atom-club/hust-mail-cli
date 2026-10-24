@@ -4,6 +4,7 @@
 
 | 命令 | 功能 | 是否连接邮箱 |
 | --- | --- | --- |
+| [schema](command-reference.md#schema-供智能体查询命令说明) | 输出版本化命令描述 | 否 |
 | [config init](command-reference.md#config-init-初始化配置) | 交互创建本地配置 | 否 |
 | [doctor](command-reference.md#doctor-检查邮箱连接) | 检查 IMAP/SMTP TLS 和认证 | 是，不发送邮件 |
 | [send](command-reference.md#send-发送纯文本邮件) | 通过 SMTP 提交纯文本邮件 | 是，发送 |
@@ -33,6 +34,39 @@ hust-mail-cli attachments list /path/to/message.eml --json
 `list`、`search`、`attachments list/export` 原本就输出 JSON Lines，加上 `--json` 后字段与格式保持一致。`read --json` 输出 `path`、`subject`、`from`、`to`、`date`、`body` 和附件元数据数组 `attachments`；无附件时为 `[]`。`read --raw` 与 `--json` 不可同时使用。
 
 只读收信的连接选项、密码输入方式和权限要求见[配置指南](configuration.md)。SMTP 纯文本发信见 `send`；没有回复、转发或删除子命令。
+
+## schema 供智能体查询命令说明
+
+参考 `atomgit-cli schema`，从 Cobra 命令树及静态注解生成版本化 JSON 描述。不会执行被查询命令、参数校验器、补全函数或业务逻辑；不读取配置、账号环境变量、归档或网络。即使默认配置损坏或 `--config` 指定不存在的文件，也可正常查询。
+
+```sh
+hust-mail-cli schema                          # 全部公开命令清单
+hust-mail-cli schema hust-mail-cli            # 根命令详情
+hust-mail-cli schema send                     # 发信参数和调用约束
+hust-mail-cli schema attachments export       # 嵌套命令详情
+hust-mail-cli schema config init
+hust-mail-cli schema hust-mail-cli search     # 可带可执行文件名前缀
+```
+
+仅接受完整命令路径或已注册别名，不进行前缀猜测；隐藏命令和参数不会输出。未知路径退出非零，不输出部分结果。始终输出单行 JSON，是否添加全局 `--json` 不影响格式。
+
+输出带 `formatVersion: 1`：省略路径时返回 `commands` 清单，提供路径时返回 `command` 详情。清单含 `path`、`description`、`aliases`、`runnable`、`deprecated`；详情还包括：
+
+| 字段 | 含义 |
+| --- | --- |
+| `usage`、`longDescription`、`example`、`subcommands` | 用法、说明、示例和直接子命令 |
+| `flags` | 参数名、简称、类型、注册默认值、必填性、继承关系、定义位置及弃用说明 |
+| `positionals` | 位置参数的最少/最多数量及语义；最多 `-1` 表示不限 |
+| `flagGroups` | `mutuallyExclusive`、`atLeastOneRequired`、`requiredTogether` 关系 |
+| `output` | 输出格式及 `--json` / `--raw` 等条件 |
+| `effects` | 副作用，例如 `none`、`smtpSend`、`localConfigCreate`、本地归档/缓存/附件写入 |
+| `network`、`config`、`interactive` | 网络访问协议、配置访问方式和是否需要终端输入 |
+| `notes` | 无法从 Cobra 自动推导的使用约束和注意事项 |
+| `validation`、`undescribed` | 当前只覆盖部分校验；列出未描述的事项，不能视为完整执行或结果模型 |
+
+这是命令描述格式，**不是 JSON Schema**，没有完整的业务校验或响应字段模型。`flags.default` 是代码注册值，配置、环境变量和显式参数会影响真正执行时的值；输出不包含当前配置、密码或运行时参数值。未知或未描述的行为不能推断为安全。
+
+智能体调用前应查询具体命令详情，并按 `notes` 检查前提：`send` 会发送真实邮件，需用户明确授权；SMTP 接受不等于送达，接受状态不明时不能自动重发。`doctor` 仅连接和认证；`config init` 必须交互输入；`search` 默认可能写入可丢弃索引，使用 `--no-index` 可避免索引读写。查询这些命令的 schema 本身均无上述副作用。
 
 ## config init 初始化配置
 

@@ -9,7 +9,7 @@
 - `internal/mailsend/`: authenticated SMTP/TLS submission and MIME construction.
 - Tests live beside their implementation in `*_test.go`. `config.example.json` contains placeholder settings; `README.md` documents user workflows.
 
-Keep protocol and storage logic outside Cobra handlers. Commands include `sync`, `folders`, `list`, `read`, `search`, `attachments list/export`, `send`, `doctor`, and `config init`. Local MIME operations must preserve source messages, avoid network access, and prevent attachment path traversal or overwrites. `read --raw` preserves original bytes; default `read` shows decoded text. Sync recovery must preserve `.eml` and live locks, and never unlink the persistent `.sync.flock` inode.
+Keep protocol and storage logic outside Cobra handlers. Commands include `sync`, `folders`, `list`, `read`, `search`, `attachments list/export`, `send`, `doctor`, `config init`, and `schema`. Local MIME operations must preserve source messages, avoid network access, and prevent attachment path traversal or overwrites. `read --raw` preserves original bytes; default `read` shows decoded text. Sync recovery must preserve `.eml` and live locks, and never unlink the persistent `.sync.flock` inode.
 
 Limit protocol support to IMAP for receiving and SMTP for sending. POP3 is out of scope: do not add or retain it as a compatibility option. IMAP must remain read-only. SMTP sends only through explicit `send` invocations over verified implicit TLS; do not enable IMAP writes as part of SMTP work. Never automatically retry a submission whose acceptance is uncertain, or equate server acceptance with delivery.
 
@@ -33,6 +33,8 @@ git diff --check                           # Check whitespace errors
 ```
 
 If sandbox restrictions prevent default build-cache writes, set `GOCACHE=/private/tmp/hust-mail-cli-go-build`.
+
+`schema` must describe static Cobra registrations only, without loading configuration, reading credentials, running validators/hooks/completion handlers, or contacting the network. Keep additional command metadata next to constructors, not in a parallel catalogue. Describe network/config/interaction and local/SMTP effects accurately; unspecified validation and response models must remain explicitly undescribed. Never serialize resolved flag values or secrets. Version incompatible description format changes.
 
 ## Coding Style & Naming Conventions
 
