@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/hust-open-atom-club/hust-mail-cli/internal/commandschema"
 	"os"
 	"time"
 
@@ -63,5 +64,17 @@ func newDoctorCommandWithChecker(check func(context.Context, mailcheck.Options) 
 		return nil
 	}
 	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Minute, "Timeout per endpoint (overrides config)")
+	commandschema.Annotate(cmd, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 0, MaxCount: 0, Description: "No positional arguments"},
+		Output:      "text or jsonl with --json",
+		Effects:     "none",
+		Network:     "imap,smtp",
+		Config:      "read",
+		Interactive: "never",
+		Notes: []string{
+			"Authenticates only; no folder selection, message reads, or mail submission.",
+			"Timeout must be positive and applies separately to each endpoint. Any failed check returns nonzero.",
+			"Uses HUST_MAIL_USER and HUST_MAIL_PASSWORD when set; successful SMTP authentication does not guarantee delivery."},
+	})
 	return cmd
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/hust-open-atom-club/hust-mail-cli/internal/commandschema"
 	"io"
 	"net/mail"
 	"os"
@@ -52,6 +53,26 @@ func newConfigCommandWithPrompt(prompt configPrompt) *cobra.Command {
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "配置已创建：%s\n可在配置文件中设置其他选项：days（默认 0，全部历史）、mailbox（默认全部文件夹）、timeout（默认 30m）。\n运行 hust-mail-cli doctor --timeout 15s 检查连接。\n", path)
 		return err
 	}
+	commandschema.Annotate(cmd, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 0, MaxCount: 0, Description: "Choose a configuration subcommand"},
+		Output:      "help",
+		Effects:     "none",
+		Network:     "none",
+		Config:      "none",
+		Interactive: "never",
+	})
+	commandschema.Annotate(init, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 0, MaxCount: 0, Description: "No positional arguments"},
+		Output:      "text or json with --json",
+		Effects:     "localConfigCreate",
+		Network:     "none",
+		Config:      "create",
+		Interactive: "required",
+		Notes: []string{
+			"Requires a terminal; prompts for email, hidden dedicated password, and archive directory (default ~/HUST-Mail/). Does not consume account environment overrides.",
+			"Writes only user/password/dir at 0600, new directories at 0700. Existing files and symlinks are never overwritten; no archive directory is created.",
+			"--json affects the success result only; interactive prompts still require a terminal."},
+	})
 	cmd.AddCommand(init)
 	return cmd
 }

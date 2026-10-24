@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/hust-open-atom-club/hust-mail-cli/internal/commandschema"
 	"io"
 	"os"
 	"os/signal"
@@ -85,6 +86,20 @@ func newSendCommandWithSender(send func(context.Context, mailsend.Options) (mail
 	f.DurationVar(&o.Timeout, "timeout", 30*time.Minute, "Total SMTP connection and submission timeout")
 	_ = cmd.MarkFlagRequired("to")
 	_ = cmd.MarkFlagRequired("subject")
+	commandschema.Annotate(cmd, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 0, MaxCount: 0, Description: "No positional arguments"},
+		Output:      "text or json with --json",
+		Effects:     "smtpSend",
+		Network:     "smtp",
+		Config:      "read",
+		Interactive: "never",
+		FlagGroups:  []commandschema.FlagGroup{{Kind: "atLeastOneRequired", Flags: []string{"body", "body-file"}}, {Kind: "mutuallyExclusive", Flags: []string{"body", "body-file"}}},
+		Notes: []string{
+			"Sends real email; invoke only with explicit user authorization. Fixed mail.hust.edu.cn:465 with verified implicit TLS.",
+			"Provide exactly one of --body or --body-file; --body-file - reads stdin. Body is UTF-8, maximum 10 MiB; --to may repeat.",
+			"SMTP acceptance is not delivery confirmation. Never automatically retry uncertain acceptance.",
+			"Uses configured account/password with HUST_MAIL_USER and HUST_MAIL_PASSWORD overrides; --user takes precedence. Timeout must be positive."},
+	})
 	return cmd
 }
 

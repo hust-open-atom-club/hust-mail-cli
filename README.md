@@ -6,6 +6,7 @@ Go 编写的华中科技大学邮箱 CLI，使用 Cobra 组织命令。默认通
 
 | 类别 | 能力 |
 | --- | --- |
+| 智能体 | `schema` 输出命令、参数约束、网络访问和副作用说明 |
 | 诊断 | 检查配置对应的 IMAP/SMTP TLS 连接和认证，不发送邮件 |
 | 收信 | 只读 IMAP、多文件夹增量同步、按收信时间筛选 |
 | 阅读 | 本地邮件列表、解码正文展示、原始 `.eml` 输出 |
@@ -52,6 +53,8 @@ hust-mail-cli folders
 hust-mail-cli sync
 hust-mail-cli list
 ```
+
+智能体可先运行 `hust-mail-cli schema` 获取命令清单，再用 `hust-mail-cli schema send` 等查询调用约束；仅查询描述，不执行命令或读取凭据。
 
 运行 `hust-mail-cli --help` 查看命令概览，或运行 `hust-mail-cli <command> --help` 查看具体参数。各命令的详细介绍和示例见[命令参考](docs/command-reference.md)。
 

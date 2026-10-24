@@ -2,6 +2,7 @@ package root
 
 import (
 	"errors"
+	"github.com/hust-open-atom-club/hust-mail-cli/internal/commandschema"
 	"github.com/hust-open-atom-club/hust-mail-cli/internal/config"
 	"github.com/hust-open-atom-club/hust-mail-cli/internal/mailarchive"
 	"github.com/spf13/cobra"
@@ -32,6 +33,17 @@ func newReadCommand() *cobra.Command {
 		}
 		return mailarchive.Show(cmd.Context(), args[0], cmd.OutOrStdout())
 	}}
+	commandschema.Annotate(cmd, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 1, MaxCount: 1, Description: "Path to a local .eml file"},
+		Output:      "text; original bytes with --raw; json with --json",
+		Effects:     "none",
+		Network:     "none",
+		Config:      "none",
+		Interactive: "never",
+		FlagGroups:  []commandschema.FlagGroup{{Kind: "mutuallyExclusive", Flags: []string{"raw", "json"}}},
+		Notes: []string{
+			"Preserves source message bytes."},
+	})
 	cmd.Flags().BoolVar(&raw, "raw", false, "Write original MIME bytes instead of decoded text")
 	return cmd
 }
@@ -49,6 +61,19 @@ func newSearchCommand() *cobra.Command {
 		}
 		return mailarchive.Search(cmd.Context(), archiveDir, opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	}}
+	commandschema.Annotate(cmd, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 0, MaxCount: 1, Description: "Optional case-insensitive query across decoded headers and body"},
+		Output:      "jsonl",
+		Effects:     "localCacheWriteUnlessNoIndex",
+		Network:     "none",
+		Config:      "read",
+		Interactive: "never",
+		FlagGroups:  []commandschema.FlagGroup{{Kind: "mutuallyExclusive", Flags: []string{"no-index", "rebuild-index"}}},
+		Notes: []string{
+			"Provide a query, a search field, a date bound, or date sorting; empty search is rejected.",
+			"--sort is none, newest, or oldest. --limit is nonnegative (0 is unlimited). Date bounds use sender Date headers, not server receive times.",
+			"--no-index reads source mail without index access; otherwise disposable indexes may be written. Source mail is preserved."},
+	})
 	f := cmd.Flags()
 	f.StringVar(&dir, "dir", config.DefaultArchiveDir, "Local archive directory")
 	f.StringVar(&opts.Subject, "subject", "", "Subject substring (case-insensitive)")
@@ -81,6 +106,32 @@ func newAttachmentsCommand() *cobra.Command {
 	}}
 	export.Flags().StringVar(&dir, "output", "./attachments", "Attachment destination directory")
 	export.Flags().IntVar(&index, "index", 0, "Export one attachment by 1-based index; 0 means all")
+	commandschema.Annotate(cmd, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 0, MaxCount: 0, Description: "Choose list or export"},
+		Output:      "help",
+		Effects:     "none",
+		Network:     "none",
+		Config:      "none",
+		Interactive: "never",
+	})
+	commandschema.Annotate(list, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 1, MaxCount: 1, Description: "Path to a local .eml file"},
+		Output:      "jsonl",
+		Effects:     "none",
+		Network:     "none",
+		Config:      "none",
+		Interactive: "never",
+	})
+	commandschema.Annotate(export, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 1, MaxCount: 1, Description: "Path to a local .eml file"},
+		Output:      "jsonl",
+		Effects:     "localAttachmentWrite",
+		Network:     "none",
+		Config:      "none",
+		Interactive: "never",
+		Notes: []string{
+			"--index is a nonnegative 1-based attachment index; 0 exports all. Existing destination files are never overwritten; source messages are preserved."},
+	})
 	cmd.AddCommand(list, export)
 	return cmd
 }
