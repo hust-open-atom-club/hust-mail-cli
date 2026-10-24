@@ -34,16 +34,15 @@ make install
 
 ## 配置
 
-先按照[客户端专用密码获取指南](docs/client-password.md)，在邮箱网页端生成专用密码，然后复制配置模板：
+先按照[客户端专用密码获取指南](docs/client-password.md)，在邮箱网页端生成专用密码，然后运行：
 
 ```sh
-mkdir -p ~/.config/hust-mail-cli
-cp -n config.example.json ~/.config/hust-mail-cli/config.json
-chmod 700 ~/.config/hust-mail-cli
-chmod 600 ~/.config/hust-mail-cli/config.json
+hust-mail-cli config init
 ```
 
-模板仅包含 `user`（完整邮箱）、`password`（专用密码）和 `dir`（归档目录）。连接固定使用 `mail.hust.edu.cn` 的 IMAP 993 / SMTP 465，不提供协议、服务器或端口覆盖；默认归档到 `~/HUST-Mail/`，同步所有文件夹和全部历史邮件，不自动删除旧归档。可用 `--days 7` 限制新增下载范围；可选字段和覆盖规则见[配置指南](docs/configuration.md)。
+按提示输入邮箱地址、专用密码（隐藏输入）和邮件归档目录（回车采用 `~/HUST-Mail/`）。配置仅保存到本地，不连接邮箱；已有配置不会覆盖。完成后可运行 `hust-mail-cli doctor --timeout 15s` 检查连接。也可手动复制仓库中的 `config.example.json`，详见[配置指南](docs/configuration.md)。
+
+生成的配置仅包含 `user`（完整邮箱）、`password`（专用密码）和 `dir`（归档目录）。连接固定使用 `mail.hust.edu.cn` 的 IMAP 993 / SMTP 465，不提供协议、服务器或端口覆盖；默认归档到 `~/HUST-Mail/`，同步所有文件夹和全部历史邮件，不自动删除旧归档。可用 `--days 7` 限制新增下载范围；可选字段和覆盖规则见[配置指南](docs/configuration.md)。
 
 ## 使用
 

@@ -37,7 +37,7 @@ func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 		},
 	}
 	list.Flags().StringVar(&dir, "dir", config.DefaultArchiveDir, "Local archive directory")
-	cmd.AddCommand(newDoctorCommand(), newSendCommand(), list, newReadCommand(), newSearchCommand(), newAttachmentsCommand())
+	cmd.AddCommand(newConfigCommand(), newDoctorCommand(), newSendCommand(), list, newReadCommand(), newSearchCommand(), newAttachmentsCommand())
 	return cmd
 }
 

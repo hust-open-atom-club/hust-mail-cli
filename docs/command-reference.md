@@ -4,6 +4,7 @@
 
 | 命令 | 功能 | 是否连接邮箱 |
 | --- | --- | --- |
+| [config init](command-reference.md#config-init-初始化配置) | 交互创建本地配置 | 否 |
 | [doctor](command-reference.md#doctor-检查邮箱连接) | 检查 IMAP/SMTP TLS 和认证 | 是，不发送邮件 |
 | [send](command-reference.md#send-发送纯文本邮件) | 通过 SMTP 提交纯文本邮件 | 是，发送 |
 | [sync](command-reference.md#sync-同步邮件) | 增量同步邮件到本地归档 | 是，只读 |
@@ -32,6 +33,18 @@ hust-mail-cli attachments list /path/to/message.eml --json
 `list`、`search`、`attachments list/export` 原本就输出 JSON Lines，加上 `--json` 后字段与格式保持一致。`read --json` 输出 `path`、`subject`、`from`、`to`、`date`、`body` 和附件元数据数组 `attachments`；无附件时为 `[]`。`read --raw` 与 `--json` 不可同时使用。
 
 只读收信的连接选项、密码输入方式和权限要求见[配置指南](configuration.md)。SMTP 纯文本发信见 `send`；没有回复、转发或删除子命令。
+
+## config init 初始化配置
+
+```sh
+hust-mail-cli config init
+hust-mail-cli config init --config /path/to/config.json
+hust-mail-cli config init --json
+```
+
+交互输入邮箱地址、隐藏的客户端专用密码和归档目录（回车默认 `~/HUST-Mail/`）。只写入 `user`、`password`、`dir`，并提示可自行添加 `days`、`mailbox`、`timeout`。新建目录权限为 `0700`，配置文件为 `0600`；已有配置拒绝覆盖，取消时不写文件。不连接邮箱、不创建归档目录。
+
+需要交互终端，提示始终显示在终端中；`--json` 仅将成功结果 `{"path":"…","status":"created"}` 写入标准输出，不包含凭据。默认路径为 `~/.config/hust-mail-cli/config.json`，`--config` 可指定其他新文件。完成后运行 `doctor --timeout 15s` 验证连接。无终端时按[配置指南](configuration.md)手工创建。
 
 ## doctor 检查邮箱连接
 
