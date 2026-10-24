@@ -19,7 +19,8 @@ nohup hust-mail-cli sync > ~/hust-mail-sync.log 2>&1 < /dev/null &
 
 - 确认 `user` 是完整邮箱地址，`password` 是[网页端生成的客户端专用密码](client-password.md)，不是专用密码名称或网页登录密码。
 - 配置含密码时，执行 `chmod 600 ~/.config/hust-mail-cli/config.json`，限制其他用户读取。
-- 使用 `hust-mail-cli folders` 检查只读 IMAP 连接；确认主机、端口及专用密码对应的协议访问权限。
+- 先运行 `hust-mail-cli doctor --timeout 15s`，分别检查 IMAP/SMTP 连接、TLS 证书及专用密码认证；也可加 `--json` 获取分阶段结果。端点固定为 `mail.hust.edu.cn:993/465`，不发送邮件。详见[doctor](command-reference.md#doctor-检查邮箱连接)。
+- `doctor` 认证成功后，可用 `hust-mail-cli folders` 验证 IMAP 文件夹列表访问。SMTP 认证成功不等于邮件最终送达。
 - 总操作超时可使用 `--timeout 60m` 调整；终端输入密码的时间不计入该限制。
 
 ## 邮件仍存在但服务器不返回正文
