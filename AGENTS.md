@@ -9,7 +9,7 @@
 - `internal/mailsend/`: authenticated SMTP/TLS submission and MIME construction.
 - Tests live beside their implementation in `*_test.go`. `config.example.json` contains placeholder settings; `README.md` documents user workflows.
 
-Keep protocol and storage logic outside Cobra handlers. Commands include `sync`, `folders`, `list`, `read`, `search`, `attachments list/export`, and `send`. Local MIME operations must preserve source messages, avoid network access, and prevent attachment path traversal or overwrites. `read --raw` preserves original bytes; default `read` shows decoded text. Sync recovery must preserve `.eml` and live locks, and never unlink the persistent `.sync.flock` inode.
+Keep protocol and storage logic outside Cobra handlers. Commands include `sync`, `folders`, `list`, `read`, `search`, `attachments list/export`, `send`, and `doctor`. Local MIME operations must preserve source messages, avoid network access, and prevent attachment path traversal or overwrites. `read --raw` preserves original bytes; default `read` shows decoded text. Sync recovery must preserve `.eml` and live locks, and never unlink the persistent `.sync.flock` inode.
 
 Limit protocol support to IMAP for receiving and SMTP for sending. POP3 is out of scope: do not add or retain it as a compatibility option. IMAP must remain read-only. SMTP sends only through explicit `send` invocations over verified implicit TLS; do not enable IMAP writes as part of SMTP work. Never automatically retry a submission whose acceptance is uncertain, or equate server acceptance with delivery.
 
@@ -52,7 +52,7 @@ Default configuration is `~/.config/hust-mail-cli/config.json`, including on mac
 
 ### Minimal Configuration Contract
 
-Keep `config.example.json` and quick-start examples limited to `user`, `password`, and `dir`. Built-in defaults provide IMAP receiving at `mail.hust.edu.cn:993` and SMTP submission at `mail.hust.edu.cn:465`. Both require verified implicit TLS (minimum TLS 1.2); do not add plaintext fallback, certificate bypasses, or infer STARTTLS from a port number. SMTP reuses the same account and dedicated password; loading configuration must never send mail.
+Keep `config.example.json` and quick-start examples limited to `user`, `password`, and `dir`. Built-in defaults provide IMAP receiving at `mail.hust.edu.cn:993` and SMTP submission at `mail.hust.edu.cn:465`. Both require verified implicit TLS (minimum TLS 1.2); do not add plaintext fallback, certificate bypasses, or infer STARTTLS from a port number. SMTP reuses the same account and dedicated password; loading configuration must never send mail. `doctor` may connect and authenticate only; it must not submit mail, select folders, fetch messages, or alter configuration/archives.
 
 Omitted `dir` defaults to `~/HUST-Mail/`; omitted `days` defaults to `0` (all history), `mailbox` to empty (all selectable IMAP folders), and `timeout` to `30m`. `mailbox` names a folder such as `INBOX`, not an account address. Keep these fields optional, with explicit flags taking precedence. Resolve overrides before validating the effective value.
 

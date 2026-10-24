@@ -4,6 +4,7 @@
 
 | 命令 | 功能 | 是否连接邮箱 |
 | --- | --- | --- |
+| [doctor](command-reference.md#doctor-检查邮箱连接) | 检查 IMAP/SMTP TLS 和认证 | 是，不发送邮件 |
 | [send](command-reference.md#send-发送纯文本邮件) | 通过 SMTP 提交纯文本邮件 | 是，发送 |
 | [sync](command-reference.md#sync-同步邮件) | 增量同步邮件到本地归档 | 是，只读 |
 | [folders](command-reference.md#folders-列出文件夹) | 列出可读取的 IMAP 文件夹 | 是，只读 |
@@ -30,7 +31,23 @@ hust-mail-cli attachments list /path/to/message.eml --json
 
 `list`、`search`、`attachments list/export` 原本就输出 JSON Lines，加上 `--json` 后字段与格式保持一致。`read --json` 输出 `path`、`subject`、`from`、`to`、`date`、`body` 和附件元数据数组 `attachments`；无附件时为 `[]`。`read --raw` 与 `--json` 不可同时使用。
 
-只读收信的连接选项、密码输入方式和权限要求见[配置指南](configuration.md)。SMTP 纯文本发信见 `send`；没有回复、转发、删除或 doctor 子命令。
+只读收信的连接选项、密码输入方式和权限要求见[配置指南](configuration.md)。SMTP 纯文本发信见 `send`；没有回复、转发或删除子命令。
+
+## doctor 检查邮箱连接
+
+读取默认配置文件（或 `--config` 指定的文件），分别检查 `mail.hust.edu.cn:993` 的 IMAP 和 `mail.hust.edu.cn:465` 的 SMTP。检查包含 DNS/TCP 连接、证书验证、协议握手及账号认证，不读取邮件、不修改邮箱、不提交邮件，也不调整配置或清理归档。
+
+```sh
+hust-mail-cli doctor --timeout 15s
+hust-mail-cli doctor --json --timeout 15s
+hust-mail-cli doctor --config /path/to/config.json
+```
+
+账号和专用密码来自配置，`HUST_MAIL_USER` / `HUST_MAIL_PASSWORD` 可以覆盖；不交互询问密码。超时使用配置中的 `timeout`（省略时为 `30m`），`--timeout` 可覆盖，分别作用于每个端点。排障时建议显式指定较短超时。
+
+文本输出显示 `OK` / `FAIL`、协议、端点、检查阶段及固定提示。`--json` 每个端点输出一行，包含 `protocol`、`endpoint`、`ok`、`stage`、`message`；`stage` 为最终检查阶段 `connect`、`tls`、`greeting` 或 `auth`。一个端点失败后仍会检查另一个；任一失败时退出码非零。配置无效时直接报错，不连接服务器。为避免泄露凭据，不输出服务端原始错误内容。
+
+SMTP 认证成功仅表示当前网络和账号可以完成认证，不保证后续发信获准或最终送达。实际发送需显式运行 `send`。
 
 ## sync 同步邮件
 

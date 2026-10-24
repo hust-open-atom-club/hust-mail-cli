@@ -6,6 +6,7 @@ Go 编写的华中科技大学邮箱 CLI，使用 Cobra 组织命令。默认通
 
 | 类别 | 能力 |
 | --- | --- |
+| 诊断 | 检查配置对应的 IMAP/SMTP TLS 连接和认证，不发送邮件 |
 | 收信 | 只读 IMAP、多文件夹增量同步、按收信时间筛选 |
 | 阅读 | 本地邮件列表、解码正文展示、原始 `.eml` 输出 |
 | 搜索 | 按主题、发件人、收件人和正文搜索本地邮件 |
@@ -47,6 +48,7 @@ chmod 600 ~/.config/hust-mail-cli/config.json
 ## 使用
 
 ```sh
+hust-mail-cli doctor --timeout 15s
 hust-mail-cli folders
 hust-mail-cli sync
 hust-mail-cli list
