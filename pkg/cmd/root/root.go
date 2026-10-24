@@ -2,6 +2,7 @@ package root
 
 import (
 	"errors"
+	"github.com/hust-open-atom-club/hust-mail-cli/internal/commandschema"
 	"io"
 	"os"
 	"time"
@@ -36,8 +37,33 @@ func NewCmdRoot(stdout, stderr io.Writer) *cobra.Command {
 			return mailarchive.ListContext(cmd.Context(), archiveDir, cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
+	commandschema.Annotate(list, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 0, MaxCount: 0, Description: "No positional arguments"},
+		Output:      "jsonl",
+		Effects:     "localCacheWrite",
+		Network:     "none",
+		Config:      "read",
+		Interactive: "never",
+		Notes: []string{
+			"Reads source message headers; may update disposable header caches. Source messages are preserved."},
+	})
 	list.Flags().StringVar(&dir, "dir", config.DefaultArchiveDir, "Local archive directory")
-	cmd.AddCommand(newConfigCommand(), newDoctorCommand(), newSendCommand(), list, newReadCommand(), newSearchCommand(), newAttachmentsCommand())
+	cmd.AddCommand(newSchemaCommand(), newConfigCommand(), newDoctorCommand(), newSendCommand(), list, newReadCommand(), newSearchCommand(), newAttachmentsCommand())
+	commandschema.Annotate(cmd, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 0, MaxCount: 0, Description: "Choose a subcommand"},
+		Output:      "help",
+		Effects:     "none",
+		Network:     "none",
+		Config:      "none",
+		Interactive: "never",
+	})
+	cmd.InitDefaultCompletionCmd()
+	cmd.InitDefaultHelpCmd()
+	for _, builtin := range cmd.Commands() {
+		if builtin.Name() == "completion" || builtin.Name() == "help" {
+			annotateUtility(builtin)
+		}
+	}
 	return cmd
 }
 
@@ -62,6 +88,22 @@ func newReceiveCommand(name, short string) *cobra.Command {
 		flags.StringVar(&opts.Dir, "dir", config.DefaultArchiveDir, "Local archive directory")
 		flags.StringVar(&opts.Mailbox, "mailbox", "", "Sync one IMAP folder; default: all selectable folders")
 	}
+	effects, output := "none", "text or jsonl with --json"
+	if name == "sync" {
+		effects = "localArchiveAndCacheWrite"
+	}
+	commandschema.Annotate(cmd, commandschema.Metadata{
+		Positionals: &commandschema.Positionals{MinCount: 0, MaxCount: 0, Description: "No positional arguments"},
+		Output:      output,
+		Effects:     effects,
+		Network:     "imap",
+		Config:      "read",
+		Interactive: "ifPasswordMissing",
+		Notes: []string{
+			"Fixed mail.hust.edu.cn:993 with verified implicit TLS; IMAP is read-only.",
+			"Account/password environment overrides are HUST_MAIL_USER and HUST_MAIL_PASSWORD; explicit flags take precedence.",
+			"Timeout must be positive; sync days must be 0..36500, based on INTERNALDATE. Zero means all history; existing archive mail is never automatically deleted."},
+	})
 	return cmd
 }
 
